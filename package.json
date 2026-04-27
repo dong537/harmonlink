@@ -1,0 +1,17 @@
+{
+  "name": "ipipd-panel",
+  "version": "1.0.0",
+  "description": "ToC and admin panel for IPIPD residential proxy ordering",
+  "main": "server.js",
+  "type": "module",
+  "dependencies": {
+    "mysql2": "^3.11.4"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

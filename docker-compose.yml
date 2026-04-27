@@ -1,0 +1,19 @@
+services:
+  ipipd-panel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ipipd-panel:latest
+    container_name: ipipd-panel
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      TZ: Asia/Shanghai
+      APP_SECRET: ${APP_SECRET:-please-change-this-secret}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+    volumes:
+      - ./data:/app/data
