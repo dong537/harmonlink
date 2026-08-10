@@ -1,0 +1,24 @@
+{
+  "name": "ipeasy-platform",
+  "private": true,
+  "scripts": {
+    "build": "pnpm --filter @ipeasy/db generate && turbo run build",
+    "start": "node apps/api/dist/main",
+    "typecheck": "pnpm --filter @ipeasy/db generate && turbo run typecheck",
+    "lint": "pnpm --filter @ipeasy/db generate && turbo run lint",
+    "test": "pnpm --filter @ipeasy/db generate && turbo run test",
+    "e2e": "turbo run e2e",
+    "dev": "turbo run dev",
+    "predeploy:check": "node scripts/predeploy-check.mjs",
+    "deploy:railway": "node scripts/deploy-railway.mjs"
+  },
+  "devDependencies": {
+    "turbo": "2.3.3",
+    "pnpm": "9.15.0"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

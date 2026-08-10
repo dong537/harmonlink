@@ -1,0 +1,732 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SiteStatus {
+  ACTIVE
+  MAINTENANCE
+  DISABLED
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum KycStatus {
+  NONE
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum RiskStatus {
+  NORMAL
+  FLAGGED
+  BLOCKED
+}
+
+enum AdminRole {
+  PLATFORM_ADMIN
+  TENANT_ADMIN
+  OPERATOR
+}
+
+enum AdminStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum OwnerType {
+  USER
+  ADMIN_USER
+}
+
+enum ApiKeyOwnerType {
+  USER
+  TENANT_ADMIN
+}
+
+enum ApiKeyStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum LedgerEntryType {
+  DEPOSIT
+  DEBIT
+  REFUND
+  ADJUSTMENT
+  FREEZE
+  UNFREEZE
+  RENEWAL
+  COMMISSION
+}
+
+enum PaymentChannel {
+  MANUAL
+  YIPAY
+  ALIPAY
+}
+
+enum PaymentOrderStatus {
+  PENDING
+  CONFIRMING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum AuditActorType {
+  USER
+  ADMIN_USER
+  SYSTEM
+  APIKEY
+}
+
+enum TicketStatus {
+  OPEN
+  PENDING
+  CLOSED
+}
+
+enum TicketMessageAuthorType {
+  USER
+  ADMIN_USER
+}
+
+model sites {
+  id                 String               @id @default(uuid())
+  code               String               @unique
+  name               String
+  domain             String               @unique
+  status             SiteStatus
+  brandConfig        Json?
+  maintenanceMode    Boolean              @default(false)
+  maintenanceMessage String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  tenants            tenants[]
+  users              users[]
+  admin_users        admin_users[]
+  sessions           sessions[]
+  api_keys           api_keys[]
+  wallets            wallets[]
+  system_settings    system_settings[]
+  provider_accounts  provider_accounts[]
+  platform_resources platform_resources[]
+  price_templates    price_templates[]
+  upstream_api_accounts upstream_api_accounts[]
+  site_announcements site_announcements[]
+}
+
+model site_announcements {
+  id        String    @id @default(uuid())
+  siteId    String
+  title     String
+  content   String
+  isActive  Boolean   @default(true)
+  startsAt  DateTime?
+  endsAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  site      sites     @relation(fields: [siteId], references: [id])
+}
+
+model tenants {
+  id          String        @id @default(uuid())
+  siteId      String
+  site        sites         @relation(fields: [siteId], references: [id])
+  ownerUserId String?
+  ownerUser   users?        @relation("OwnedTenants", fields: [ownerUserId], references: [id])
+  code        String
+  name        String
+  status      TenantStatus
+  brandConfig Json?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  users       users[]
+  admin_users admin_users[]
+  api_keys    api_keys[]
+  wallets     wallets[]
+  provider_accounts provider_accounts[]
+  price_templates price_templates[]
+
+  @@unique([siteId, code])
+  @@index([siteId, ownerUserId])
+}
+
+model users {
+  id             String          @id @default(uuid())
+  siteId         String
+  site           sites           @relation(fields: [siteId], references: [id])
+  tenantId       String
+  tenant         tenants         @relation(fields: [tenantId], references: [id])
+  email          String          @unique
+  passwordHash   String
+  name           String?
+  phone          String?
+  status         UserStatus
+  kycStatus      KycStatus
+  riskStatus     RiskStatus
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  wallets        wallets[]
+  payment_orders payment_orders[]
+  user_price_bindings user_price_bindings[]
+  user_resource_price_overrides user_resource_price_overrides[]
+  orders         orders[]
+  proxy_instances proxy_instances[]
+  tickets        tickets[]
+  notifications  notifications[]
+  ownedTenants   tenants[]       @relation("OwnedTenants")
+}
+
+model admin_users {
+  id           String      @id @default(uuid())
+  siteId       String
+  site         sites       @relation(fields: [siteId], references: [id])
+  tenantId     String?
+  tenant       tenants?    @relation(fields: [tenantId], references: [id])
+  email        String      @unique
+  passwordHash String
+  role         AdminRole
+  status       AdminStatus
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model sessions {
+  id        String    @id @default(uuid())
+  ownerType OwnerType
+  ownerId   String
+  siteId    String
+  site      sites     @relation(fields: [siteId], references: [id])
+  tenantId  String?
+  token     String    @unique
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+}
+
+model api_keys {
+  id          String          @id @default(uuid())
+  siteId      String
+  site        sites           @relation(fields: [siteId], references: [id])
+  tenantId    String
+  tenant      tenants         @relation(fields: [tenantId], references: [id])
+  ownerId     String
+  ownerType   ApiKeyOwnerType
+  name        String
+  keyHash     String          @unique
+  keyPrefix   String
+  scopes      String[]
+  ipWhitelist String[]
+  status      ApiKeyStatus
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+}
+
+model wallets {
+  id        String   @id @default(uuid())
+  siteId    String
+  site      sites    @relation(fields: [siteId], references: [id])
+  tenantId  String
+  tenant    tenants  @relation(fields: [tenantId], references: [id])
+  userId    String   @unique
+  user      users    @relation(fields: [userId], references: [id])
+  available Decimal  @db.Decimal(20, 8)
+  frozen    Decimal  @db.Decimal(20, 8)
+  currency  String
+  version         Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  ledger_entries  ledger_entries[]
+}
+
+model ledger_entries {
+  id             String          @id @default(uuid())
+  siteId         String
+  tenantId       String
+  walletId       String
+  wallet         wallets         @relation(fields: [walletId], references: [id])
+  userId         String
+  type           LedgerEntryType
+  amount         Decimal         @db.Decimal(20, 8)
+  balanceAfter   Decimal         @db.Decimal(20, 8)
+  currency       String
+  relatedId      String?
+  reason         String?
+  idempotencyKey String          @unique
+  createdAt      DateTime        @default(now())
+  meta           Json?
+}
+
+model payment_orders {
+  id             String         @id @default(uuid())
+  siteId         String
+  tenantId       String
+  userId         String
+  user           users          @relation(fields: [userId], references: [id])
+  amount         Decimal        @db.Decimal(20, 8)
+  currency       String
+  channel        PaymentChannel
+  status         PaymentOrderStatus
+  idempotencyKey String         @unique
+  channelOrderId String?
+  confirmedBy    String?
+  confirmedAt    DateTime?
+  failReason     String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  meta           Json?
+}
+
+model audit_logs {
+  id         String    @id @default(uuid())
+  siteId     String
+  tenantId   String?
+  actorType  AuditActorType
+  actorId    String
+  targetType String?
+  targetId   String?
+  action     String
+  reason     String?
+  requestId  String
+  ipAddress  String?
+  meta       Json?
+  createdAt  DateTime  @default(now())
+}
+
+model system_settings {
+  id          String   @id @default(uuid())
+  siteId      String
+  site        sites    @relation(fields: [siteId], references: [id])
+  key         String
+  value       String
+  description String?
+  updatedBy   String?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([siteId, key])
+}
+
+enum UpstreamRequestStatus {
+  SUCCESS
+  ERROR
+  TIMEOUT
+}
+
+enum ProviderAccountStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum UpstreamApiAccountStatus {
+  ACTIVE
+  DISABLED
+}
+
+model upstream_request_logs {
+  id                  String                @id @default(uuid())
+  siteId              String
+  providerCode        String
+  upstreamAccountId   String?
+  operation           String
+  requestId           String
+  durationMs          Int
+  status              UpstreamRequestStatus
+  errorCode           String?
+  requestSummary      Json?
+  responseSummary     Json?
+  createdAt           DateTime              @default(now())
+}
+
+model provider_accounts {
+  id                    String                @id @default(uuid())
+  siteId                String
+  site                  sites                 @relation(fields: [siteId], references: [id])
+  tenantId              String?
+  tenant                tenants?              @relation(fields: [tenantId], references: [id])
+  providerCode          String
+  status                ProviderAccountStatus
+  credentialEncrypted   String
+  baseUrl               String
+  timeoutMs             Int                   @default(15000)
+  inventorySyncEnabled  Boolean               @default(false)
+  enabledCountryCodes   String[]              @default([])
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  @@index([siteId, tenantId, providerCode, status])
+}
+
+enum ResourceType {
+  COUNTRY
+  REGION
+  ZONE
+}
+
+enum IpType {
+  NATIVE
+  BROADCAST
+  BOTH
+}
+
+enum Protocol {
+  HTTP
+  SOCKS5
+  BOTH
+}
+
+enum ResourceStatus {
+  ACTIVE
+  HIDDEN
+  DISABLED
+}
+
+model platform_resources {
+  id                String               @id @default(uuid())
+  siteId            String
+  site              sites                @relation(fields: [siteId], references: [id])
+  upstreamAccountId String?
+  parentId          String?
+  parent            platform_resources?  @relation("ResourceChildren", fields: [parentId], references: [id])
+  children          platform_resources[] @relation("ResourceChildren")
+  type              ResourceType
+  code              String
+  name              String
+  displayName       String?
+  providerCode      String
+  ipType            IpType
+  protocol          Protocol
+  status            ResourceStatus
+  sortOrder         Int                  @default(0)
+  upstreamCost      Decimal?             @db.Decimal(20, 8)
+  upstreamCostCurrency String?
+  isVisible         Boolean              @default(true)
+  isSaleable        Boolean              @default(true)
+  unsaleableReason  String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  inventory_snapshots      inventory_snapshots[]
+  resource_mappings        resource_mappings[]
+  price_rules              price_rules[]
+  price_overrides          price_overrides[]
+  user_resource_price_overrides user_resource_price_overrides[]
+  orders                   orders[]
+
+  @@unique([siteId, providerCode, upstreamAccountId, code, ipType], map: "platform_resources_site_provider_account_code_iptype_key")
+  @@index([siteId, providerCode, upstreamAccountId, status], map: "platform_resources_site_provider_account_status_idx")
+}
+
+model inventory_snapshots {
+  id                  String             @id @default(uuid())
+  siteId              String
+  resourceId          String
+  resource            platform_resources @relation(fields: [resourceId], references: [id])
+  providerCode        String
+  upstreamAccountId   String?
+  stock               Int
+  capturedAt          DateTime
+  freshnessTtlSeconds Int                @default(300)
+  isStale             Boolean            @default(false)
+}
+
+model resource_mappings {
+  id                 String             @id @default(uuid())
+  siteId             String
+  resourceId         String
+  resource           platform_resources @relation(fields: [resourceId], references: [id])
+  providerCode       String
+  upstreamAccountId  String?
+  providerResourceId String
+  weight             Int                @default(100)
+
+  @@unique([siteId, resourceId, providerCode, upstreamAccountId], map: "resource_mappings_site_resource_provider_account_key")
+}
+
+model price_templates {
+  id          String        @id @default(uuid())
+  siteId      String
+  site        sites         @relation(fields: [siteId], references: [id])
+  tenantId    String?
+  tenant      tenants?      @relation(fields: [tenantId], references: [id])
+  name        String
+  description String?
+  isDefault   Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  price_rules price_rules[]
+  user_price_bindings user_price_bindings[]
+
+  @@index([siteId, tenantId])
+}
+
+model price_rules {
+  id         String             @id @default(uuid())
+  siteId     String
+  templateId String
+  template   price_templates    @relation(fields: [templateId], references: [id])
+  resourceId String
+  resource   platform_resources @relation(fields: [resourceId], references: [id])
+  durationDays Int
+  unitPrice  Decimal            @db.Decimal(20, 8)
+  currency   String
+  minQty     Int                @default(1)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  @@unique([siteId, templateId, resourceId, durationDays])
+}
+
+model price_overrides {
+  id           String             @id @default(uuid())
+  siteId       String
+  resourceId   String
+  resource     platform_resources @relation(fields: [resourceId], references: [id])
+  durationDays Int
+  unitPrice    Decimal            @db.Decimal(20, 8)
+  currency     String
+
+  @@unique([siteId, resourceId, durationDays])
+}
+
+model user_price_bindings {
+  id         String          @id @default(uuid())
+  siteId     String
+  tenantId   String
+  userId     String
+  user       users           @relation(fields: [userId], references: [id])
+  templateId String
+  template   price_templates @relation(fields: [templateId], references: [id])
+
+  @@unique([siteId, userId])
+}
+
+model user_resource_price_overrides {
+  id           String             @id @default(uuid())
+  siteId       String
+  tenantId     String
+  userId       String
+  user         users              @relation(fields: [userId], references: [id])
+  resourceId   String
+  resource     platform_resources @relation(fields: [resourceId], references: [id])
+  durationDays Int
+  unitPrice    Decimal            @db.Decimal(20, 8)
+  currency     String
+
+  @@unique([siteId, userId, resourceId, durationDays])
+}
+
+enum OrderType {
+  STATIC_PROXY_BUY
+  STATIC_PROXY_RENEW
+}
+
+enum OrderStatus {
+  PENDING
+  FULFILLING
+  COMPLETED
+  PARTIALLY_COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum FulfillmentJobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  RETRYING
+}
+
+enum ProxyInstanceProtocol {
+  HTTP
+  SOCKS5
+}
+
+enum ProxyInstanceIpType {
+  NATIVE
+  BROADCAST
+}
+
+enum ProxyStatus {
+  DELIVERING
+  ACTIVE
+  EXPIRING
+  EXPIRED
+  RELEASING
+  RELEASED
+  FAILED
+}
+
+model orders {
+  id               String      @id @default(uuid())
+  siteId           String
+  tenantId         String
+  userId           String
+  user             users       @relation(fields: [userId], references: [id])
+  type             OrderType
+  status           OrderStatus
+  resourceId       String
+  resource         platform_resources @relation(fields: [resourceId], references: [id])
+  quantity         Int
+  durationDays     Int
+  unitPrice        Decimal     @db.Decimal(20, 8)
+  totalPrice       Decimal     @db.Decimal(20, 8)
+  currency         String
+  quoteSnapshot    Json
+  paymentOrderId   String?
+  idempotencyKey   String
+  failReason       String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  fulfillment_jobs     fulfillment_jobs[]
+  upstream_order_mirrors upstream_order_mirrors[]
+  proxy_instances  proxy_instances[]
+
+  @@unique([siteId, tenantId, userId, idempotencyKey])
+}
+
+model fulfillment_jobs {
+  id            String               @id @default(uuid())
+  siteId        String
+  orderId       String
+  order         orders               @relation(fields: [orderId], references: [id])
+  providerCode  String
+  upstreamAccountId String?
+  status        FulfillmentJobStatus
+  attempts      Int                  @default(0)
+  maxAttempts   Int                  @default(3)
+  lastError     String?
+  scheduledAt   DateTime             @default(now())
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  upstream_order_mirrors upstream_order_mirrors[]
+}
+
+model upstream_order_mirrors {
+  id                String           @id @default(uuid())
+  siteId            String
+  orderId           String
+  order             orders           @relation(fields: [orderId], references: [id])
+  fulfillmentJobId  String
+  fulfillmentJob    fulfillment_jobs @relation(fields: [fulfillmentJobId], references: [id])
+  providerCode      String
+  upstreamAccountId String?
+  upstreamOrderId   String
+  status            String
+  rawResponse       Json?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  proxy_instances   proxy_instances[]
+}
+
+model proxy_instances {
+  id                     String                @id @default(uuid())
+  siteId                 String
+  tenantId               String
+  userId                 String
+  user                   users                 @relation(fields: [userId], references: [id])
+  orderId                String
+  order                  orders                @relation(fields: [orderId], references: [id])
+  upstreamOrderMirrorId  String
+  upstreamOrderMirror    upstream_order_mirrors @relation(fields: [upstreamOrderMirrorId], references: [id])
+  upstreamProxyId        String?
+  providerCode           String
+  upstreamAccountId      String?
+  ip                     String
+  port                   Int
+  username               String
+  password               String
+  protocol               ProxyInstanceProtocol
+  countryCode            String
+  regionCode             String?
+  ipType                 ProxyInstanceIpType
+  status                 ProxyStatus
+  expiresAt              DateTime
+  businessType           String?
+  userNote               String?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+}
+
+model upstream_api_accounts {
+  id                   String                   @id @default(uuid())
+  siteId               String
+  tenantId             String?
+  name                 String
+  baseUrl              String
+  apiKeyEncrypted      String
+  status               UpstreamApiAccountStatus @default(ACTIVE)
+  timeoutMs            Int                      @default(15000)
+  inventorySyncEnabled Boolean                  @default(false)
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+  site                 sites                    @relation(fields: [siteId], references: [id])
+}
+
+model tickets {
+  id        String           @id @default(uuid())
+  siteId    String
+  tenantId  String
+  userId    String
+  user      users            @relation(fields: [userId], references: [id])
+  subject   String
+  status    TicketStatus     @default(OPEN)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  messages  ticket_messages[]
+
+  @@index([siteId, tenantId, userId])
+  @@index([status])
+}
+
+model ticket_messages {
+  id         String                  @id @default(uuid())
+  ticketId   String
+  ticket     tickets                 @relation(fields: [ticketId], references: [id])
+  siteId     String
+  tenantId   String
+  authorType TicketMessageAuthorType
+  authorId   String
+  body       String
+  createdAt  DateTime                @default(now())
+
+  @@index([ticketId])
+}
+
+model notifications {
+  id          String    @id @default(uuid())
+  siteId      String
+  tenantId    String
+  userId      String
+  user        users     @relation(fields: [userId], references: [id])
+  type        String
+  title       String
+  body        String
+  relatedType String?
+  relatedId   String?
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([siteId, tenantId, userId, readAt])
+}
