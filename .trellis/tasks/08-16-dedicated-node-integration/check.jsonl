@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Verify migration, transaction, scope, and idempotency invariants."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Verify typed errors and no silent fallback on upstream/node failures."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Verify redaction and safe audit/upstream log summaries."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Run the project quality and no-mock production checks."}
+{"file":".trellis/tasks/08-16-dedicated-node-integration/research/985-sk5-api-contract.md","reason":"Check implementation against the verified 985Proxy static API contract."}
+{"file": ".trellis/tasks/08-16-dedicated-node-integration/research/openui-managed-projection-implementation.md", "reason": "Verify API worker orchestration against the managed projection readback and secure-channel contract."}

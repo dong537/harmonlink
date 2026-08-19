@@ -1911,3 +1911,65 @@ Collapsed admin order table columns by merging source into the product column, s
 ### Next Steps
 
 - None - task complete
+
+
+## Session 57: 365Proxy 迁移控制生产前门禁
+
+**Date**: 2026-08-18
+**Task**: 365Proxy 迁移控制生产前门禁
+**Branch**: `master`
+
+### Summary
+
+完成控制节点健康事件持久化、Bark 生产配置校验与候选节点 nodeGroup 约束；API 75 文件 460 测试、Worker 6 文件 26 测试、API/Worker/Web 构建与类型检查、OpenAPI/契约生成、Prisma 校验及 predeploy 检查均通过。Railway 只读确认 backend、worker、frontend 运行中，主 Postgres 数据卷 READY；真实数据库迁移、备份和发布尚未执行。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 58: 生产发布门禁：备份权限与数据库核验
+
+**Date**: 2026-08-18
+**Task**: 生产发布门禁：备份权限与数据库核验
+**Branch**: `master`
+
+### Summary
+
+Railway 主 Postgres volume instance 已确认，当前 backup count 为 0；官方 GraphQL volumeInstanceBackupCreate 返回 Not Authorized。railway ssh 只读核验要求人工注册 SSH key，未执行。现有线上 health/ready 正常，但未发布本次代码，未执行生产迁移。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

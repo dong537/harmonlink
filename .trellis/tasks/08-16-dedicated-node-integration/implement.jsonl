@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Prisma/PostgreSQL schema, migration, transaction, scope, and idempotency rules for the dedicated control plane."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Typed upstream, reservation, node, projection, and migration error handling."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Redaction, trace IDs, provider request logs, and safe operational evidence."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Required tests, forbidden fallbacks/mocks, and production verification gates."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"The work crosses DB, API, worker, provider, OpenUI, and DNS boundaries."}
+{"file":".trellis/tasks/08-16-dedicated-node-integration/research/985-sk5-api-contract.md","reason":"Verified 985Proxy gateway, static endpoint, response, and pending-order constraints."}
+{"file": ".trellis/tasks/08-16-dedicated-node-integration/research/openui-managed-projection-implementation.md", "reason": "OpenUI managed projection API, ownership, readback and TLS management channel contract."}

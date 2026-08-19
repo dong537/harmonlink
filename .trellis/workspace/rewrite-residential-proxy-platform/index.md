@@ -7,9 +7,9 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-1.md`
-- **Total Sessions**: 56
-- **Last Active**: 2026-06-19
+- **Active File**: `journal-2.md`
+- **Total Sessions**: 60
+- **Last Active**: 2026-08-19
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1913 | Active |
+| `journal-2.md` | ~127 | Active |
+| `journal-1.md` | ~1975 | Archived |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +30,10 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 60 | 2026-08-19 | 修复充值工单与仪表盘线上流程 | `1c27e73` | `master` |
+| 59 | 2026-08-18 | 浏览器门禁与生产状态复核 | - | `master` |
+| 58 | 2026-08-18 | 生产发布门禁：备份权限与数据库核验 | - | `master` |
+| 57 | 2026-08-18 | 365Proxy 迁移控制生产前门禁 | - | `master` |
 | 56 | 2026-06-19 | 隐藏不可购买资源 | `e05c07a` | `main` |
 | 55 | 2026-06-18 | 代理详情弹窗调整 | `e36d933` | `main` |
 | 54 | 2026-06-18 | 修复 PR 过期库存报价拦截 | `131e411` | `main` |
