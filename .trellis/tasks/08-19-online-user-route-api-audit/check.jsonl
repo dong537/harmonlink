@@ -1,0 +1,1 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Verify changed static routes and billing adapter against the documented API contract and browser/network quality gates."}

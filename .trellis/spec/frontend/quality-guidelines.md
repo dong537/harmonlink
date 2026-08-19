@@ -689,3 +689,71 @@ When the deployed static bundle is updated without rebuilding the source app, it
 - Static bundle syntax checks for changed chunks.
 - Browser smoke: recharge order navigation, no proof textarea, ticket create/detail navigation, dashboard CTA navigation.
 - Network assertion: these flows produce no API 4xx and no browser console errors.
+
+## Scenario: Legacy User Route and Wallet Ledger Compatibility
+
+### 1. Scope / Trigger
+
+- Trigger: auditing or patching a deployed legacy static bundle after backend
+  controllers have removed or restricted old customer endpoints.
+- Applies to customer route records and the legacy billing adapter.
+
+### 2. Signatures
+
+- Supported wallet list: `GET /api/wallet/:userId/ledger?page=<n>&pageSize=<n>&type=<LedgerEntryType>`.
+- Supported user routes: `/proxy/dynamic/manage`, `/billing/recharge-orders`,
+  `/account/center`, and `/notifications/inbox`.
+
+### 3. Contracts
+
+- A customer route must not load a component that calls an endpoint absent from
+  the current controller contract. Redirect unsupported legacy routes to a
+  real user page; do not return fake empty data.
+- Ledger query parameters use `page`, `pageSize`, `type`, `from`, and `to`.
+- The adapter maps `DEPOSIT`, `DEBIT`, `RENEWAL`, and `REFUND` to the bundle's
+  display types, preserves opaque ids, and derives `balanceBefore` from the
+  signed ledger amount and `balanceAfter`.
+
+### 4. Validation & Error Matrix
+
+- Unsupported customer endpoint -> route redirect, no browser request to the
+  missing endpoint.
+- Missing authenticated user id -> visible adapter error; never call a URL
+  containing `undefined`.
+- Ledger response `{ items, total, page, pageSize }` -> projected legacy table
+  data with stable totals.
+- API 4xx/5xx -> visible page error and no fabricated rows.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `/account/event-log` redirects to `/account/center` because audit logs
+  are admin-only.
+- Good: `/billing/transactions` reads the authenticated user's wallet ledger.
+- Base: a new customer receives an empty ledger with HTTP 200.
+- Bad: calling `/api/event-logs/my` or `/api/notifications/settings` from a
+  customer page when no such controller exists.
+- Bad: replacing a 404 with `data: []` and presenting it as a valid result.
+
+### 6. Tests Required
+
+- Static syntax checks for the route and billing chunks.
+- Production Playwright audit over every authenticated customer route, asserting
+  no response >= 400 and no console errors.
+- Authenticated API smoke for `/users/me`, `/wallet/:userId`, wallet ledger,
+  notifications, payments, orders, and tickets.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```js
+function loadEventLog() {
+  return api.get('/event-logs/my');
+}
+```
+
+#### Correct
+
+```js
+{ path: 'account/event-log', redirect: '/account/center' }
+```
