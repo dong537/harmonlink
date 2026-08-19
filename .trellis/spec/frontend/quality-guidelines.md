@@ -588,3 +588,104 @@ window.setTimeout(() => setIsNavigating(false), 360);
 ```
 
 The router and data layer own loading; the wrapper should not add an artificial pause.
+
+## Scenario: Legacy Frontend Same-Origin API Compatibility
+
+### 1. Scope / Trigger
+
+- Trigger: deploying a previously built frontend bundle whose API paths or auth
+  response shape differ from the current backend contract.
+- Applies to the Zeabur static web service, its Nginx `/api` proxy, and the
+  legacy bundle's auth/customer adapters.
+
+### 2. Signatures
+
+- Browser API base: same-origin `/api`.
+- Auth endpoints: `POST /api/auth/login` and `POST /api/auth/register`.
+- Auth response: `{ code, msg, data: { token, expiresAt }, requestId }`.
+- Public site context: `GET /api/sites/current` with `x-public-host` forwarded.
+
+### 3. Contracts
+
+- The browser must never call the backend origin directly; Nginx owns the
+  same-origin proxy and preserves `Authorization` and public-host headers.
+- Legacy auth adapters must read `data.token` (and only boundedly accept the
+  historical `access_token` alias) and persist the token before routing.
+- Registration must submit the resolved `siteId`; a missing token is a visible
+  registration failure, not a successful redirect.
+- Optional legacy screens must not call unavailable endpoints during unrelated
+  tabs. The dedicated manage tab may load only the real list contract and must
+  render an explicit empty state when no lines exist.
+
+### 4. Validation & Error Matrix
+
+- Login/register response with `data.token` -> persist token and navigate to the
+  authenticated route.
+- Missing token or non-2xx response -> remain on auth page and show the backend
+  error.
+- Public host context request -> proxy forwards `x-public-host`; backend returns
+  the matching site/tenant context.
+- Manage tab without a dedicated list route -> no `/zones`, SKU, or location
+  requests; render `暂无专线` (or the localized equivalent) without console errors.
+- Backend/API proxy failure -> visible error; do not replace it with fake rows.
+
+### 5. Good/Base/Bad Cases
+
+- Good: browser requests remain under `/api`, login returns 201, and the user
+  reaches `/dashboard` with no console errors.
+- Base: a customer with no dedicated lines sees a real empty state.
+- Bad: hardcoding the backend URL into the bundle or treating `{ data: { token } }`
+  as a legacy top-level token response.
+- Bad: loading purchase-only zones/SKUs/locations while opening manage, creating
+  avoidable 404s and masking the actual list state.
+
+### 6. Tests Required
+
+- Playwright production smoke: register a new test customer and assert a 201
+  registration plus navigation to `/dashboard`.
+- Playwright production smoke: login, open dashboard and dedicated manage, and
+  assert no API response >= 400 and no console/page errors.
+- Static proxy check: assert the web service exposes `/api` same-origin and the
+  backend origin is absent from browser requests.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```js
+const token = response.access_token;
+await loadZones(); // runs while the manage tab is opening
+```
+
+#### Correct
+
+```js
+const token = response.data?.token ?? response.access_token;
+if (activeTab === 'buy') await loadPurchaseOptions();
+```
+
+## Scenario: Legacy Static Bundle API Adapters
+
+### Scope / Trigger
+
+When the deployed static bundle is updated without rebuilding the source app, its feature adapters must still match the current API controller contracts.
+
+### Contracts
+
+- Tickets create uses `POST /api/tickets` with `{ subject, body }`.
+- Ticket replies use `POST /api/tickets/:id/messages` with `{ body }`; closing uses `POST /api/tickets/:id/close`.
+- Ticket and payment list responses use `{ items, total, page, pageSize }`; adapters may project `items` to the bundle's legacy `data` field.
+- Ticket ids are opaque strings and must not be coerced with `Number(...)`.
+- Manual recharge requests use `POST /api/payments` with `channel: "MANUAL"` and an adapter-generated unique `idempotencyKey`; user-entered remittance proof is not part of the request.
+
+### Validation & Error Matrix
+
+- Legacy endpoint or field (`/reply`, `content`, `PATCH /close`) -> API 404/400; adapter must use the current route and DTO.
+- UUID ticket route coerced to number -> request omitted or malformed; preserve the route param as a string.
+- List response read from `data` only -> successful API response renders an empty table; map `items` explicitly.
+
+### Tests Required
+
+- Static bundle syntax checks for changed chunks.
+- Browser smoke: recharge order navigation, no proof textarea, ticket create/detail navigation, dashboard CTA navigation.
+- Network assertion: these flows produce no API 4xx and no browser console errors.
