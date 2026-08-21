@@ -8,6 +8,16 @@ export interface QuoteInput {
   currency: string;
 }
 
+export interface SkuQuoteInput {
+  siteId?: string;
+  tenantId: string;
+  userId: string;
+  skuCode: string;
+  durationDays: number;
+  quantity: number;
+  currency: string;
+}
+
 export interface QuoteResult {
   unitPrice: string;
   totalPrice: string;
@@ -16,6 +26,18 @@ export interface QuoteResult {
   durationDays: number;
   quantity: number;
   priceSource: 'USER_OVERRIDE' | 'USER_TEMPLATE' | 'TENANT_DEFAULT_TEMPLATE' | 'RESOURCE_OVERRIDE' | 'DEFAULT_TEMPLATE';
+  isSaleable: boolean;
+  unsaleableReason?: string;
+}
+
+export interface SkuQuoteResult {
+  unitPrice: string;
+  totalPrice: string;
+  currency: string;
+  skuCode: string;
+  durationDays: number;
+  quantity: number;
+  priceSource: 'USER_OVERRIDE' | 'TENANT_DEFAULT' | 'DEFAULT';
   isSaleable: boolean;
   unsaleableReason?: string;
 }
