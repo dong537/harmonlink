@@ -105,7 +105,7 @@ describe('FulfillStaticProxyUseCase', () => {
 
     await expect(useCase.execute('job-1')).resolves.toMatchObject({ status: 'COMPLETED' });
 
-    expect(registry.getConfig).toHaveBeenCalledWith('IPIPD', 'site-1', 'tenant-1');
+    expect(registry.getConfigForProviderAccount).toHaveBeenCalledWith('IPIPD', 'site-1', 'provider-account-1');
     expect(registry.getConfigForUpstreamAccount).not.toHaveBeenCalled();
     expect(adapter.buyStaticProxy).toHaveBeenCalledWith(expect.any(Object), runtimeConfig());
   });
@@ -197,6 +197,7 @@ function createUseCase(adapter: ProviderAdapter): FulfillStaticProxyUseCase {
 }
 
 type RegistryHarness = {
+  getConfigForProviderAccount: ReturnType<typeof vi.fn>;
   getConfigForUpstreamAccount: ReturnType<typeof vi.fn>;
   getConfig: ReturnType<typeof vi.fn>;
   getAdapter: ReturnType<typeof vi.fn>;
@@ -225,6 +226,7 @@ function createUseCaseHarness(
     updateJobStatus: vi.fn(),
   } as unknown as FulfillmentRepository;
   const registry = {
+    getConfigForProviderAccount: vi.fn().mockResolvedValue(runtimeConfig()),
     getConfigForUpstreamAccount: vi.fn().mockResolvedValue(null),
     getConfig: vi.fn().mockResolvedValue(runtimeConfig()),
     getAdapter: vi.fn().mockReturnValue(adapter),

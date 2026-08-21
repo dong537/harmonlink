@@ -228,6 +228,7 @@ describe('ProxyLifecycleService', () => {
 
 function createService(adapter: ProviderAdapter): ProxyLifecycleService {
   const registry = {
+    getConfigForProviderAccount: vi.fn().mockResolvedValue(runtimeConfig()),
     getConfigForUpstreamAccount: vi.fn().mockResolvedValue(runtimeConfig()),
     getConfig: vi.fn().mockResolvedValue(runtimeConfig()),
     getAdapter: vi.fn().mockReturnValue(adapter),
