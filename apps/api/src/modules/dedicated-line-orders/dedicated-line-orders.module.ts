@@ -4,6 +4,7 @@ import { ProvidersModule } from '../providers/providers.module';
 import { CatalogModule } from '../catalog/catalog.module';
 import { DedicatedLineOrdersController } from './dedicated-line-orders.controller';
 import { CreateDedicatedLineOrderUseCase } from './create-dedicated-line-order.use-case';
+import { RenewDedicatedLineUseCase } from './renew-dedicated-line.use-case';
 import { ReserveDedicatedLineStockUseCase } from './domain';
 import { DedicatedLineInventoryRepository } from './dedicated-line-inventory.repository';
 import { DedicatedLineOrderRepository } from './dedicated-line-order.repository';
@@ -21,6 +22,7 @@ import { WalletModule } from '../wallet/wallet.module';
     DedicatedLinePlacementRepository,
     ProcessDedicatedLineOrderUseCase,
     CreateDedicatedLineOrderUseCase,
+    RenewDedicatedLineUseCase,
     {
       provide: ReserveDedicatedLineStockUseCase,
       inject: [DedicatedLineInventoryRepository],
@@ -32,6 +34,7 @@ import { WalletModule } from '../wallet/wallet.module';
     DedicatedLineOrderRepository,
     ProcessDedicatedLineOrderUseCase,
     CreateDedicatedLineOrderUseCase,
+    RenewDedicatedLineUseCase,
   ],
 })
 export class DedicatedLineOrdersModule {}

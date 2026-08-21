@@ -27,14 +27,14 @@ import {
 } from '@ipeasy/api/worker';
 import { FulfillmentWorker } from './fulfillment-worker';
 import { InventorySyncWorker } from './inventory-sync-worker';
-import { DedicatedLineOrderWorker } from './dedicated-line-order-worker';
 import { BarkOutboxWorker } from './bark-outbox-worker';
+import { DedicatedLineOrderWorker } from './dedicated-line-order-worker';
 import { DedicatedLineProjectionWorker } from './dedicated-line-projection-worker';
 import { randomUUID } from 'node:crypto';
 import { DedicatedLineMigrationWorker } from './dedicated-line-migration-worker';
 
 @Module({
-  imports: [FulfillmentModule, ResourcesModule, DedicatedLineOrdersModule, DedicatedLineProjectionsModule, DedicatedLineHealthModule, DedicatedLineMigrationsModule, AlertsModule],
+  imports: [FulfillmentModule, ResourcesModule, DedicatedLineOrdersModule, DedicatedLineProjectionsModule, DedicatedLineHealthModule, AlertsModule, DedicatedLineMigrationsModule],
 })
 class WorkerAppModule {}
 
@@ -91,6 +91,22 @@ async function bootstrap(): Promise<void> {
     },
   );
   const controlNodeHealth = app.get(ProcessControlNodeHealthUseCase);
+  const runControlNodeHealth = async (): Promise<void> => {
+    if (env.DEDICATED_LINE_HEALTH_EXECUTION_ENABLED !== 'true') return;
+    try {
+      const result = await controlNodeHealth.execute();
+      console.info(`control_node_health_result ${JSON.stringify(result)}`);
+    } catch (err: unknown) {
+      console.error(
+        `control_node_health_failed ${JSON.stringify({
+          error: err instanceof Error ? err.message : String(err),
+          ...(err && typeof err === 'object' && typeof (err as Record<string, unknown>)['reasonKey'] === 'string'
+            ? { reasonKey: (err as Record<string, unknown>)['reasonKey'] }
+            : {}),
+        })}`,
+      );
+    }
+  };
 
   console.info(`Fulfillment worker started with interval ${env.WORKER_FULFILLMENT_POLL_INTERVAL_MS}ms`);
   console.info(`Inventory sync worker started with interval ${env.WORKER_INVENTORY_SYNC_INTERVAL_MS}ms`);
@@ -105,7 +121,7 @@ async function bootstrap(): Promise<void> {
   await barkOutboxWorker.poll();
   await dedicatedLineProjectionWorker.poll();
   await dedicatedLineMigrationWorker.poll();
-  if (env.DEDICATED_LINE_HEALTH_EXECUTION_ENABLED === 'true') await controlNodeHealth.execute();
+  await runControlNodeHealth();
   const timer = setInterval(() => {
     void worker.poll();
   }, env.WORKER_FULFILLMENT_POLL_INTERVAL_MS);
@@ -124,7 +140,9 @@ async function bootstrap(): Promise<void> {
   const dedicatedLineMigrationTimer = setInterval(() => {
     void dedicatedLineMigrationWorker.poll();
   }, env.WORKER_DEDICATED_LINE_MIGRATION_POLL_INTERVAL_MS);
-  const controlNodeHealthTimer = setInterval(() => { if (env.DEDICATED_LINE_HEALTH_EXECUTION_ENABLED === 'true') void controlNodeHealth.execute(); }, env.WORKER_DEDICATED_LINE_PROJECTION_POLL_INTERVAL_MS);
+  const controlNodeHealthTimer = setInterval(() => {
+    void runControlNodeHealth();
+  }, env.WORKER_DEDICATED_LINE_PROJECTION_POLL_INTERVAL_MS);
 
   const shutdown = async (): Promise<void> => {
     globalThis.clearInterval(timer);
