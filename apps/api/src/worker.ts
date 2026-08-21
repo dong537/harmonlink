@@ -12,6 +12,7 @@ export {
   ProcessDedicatedLineOrderUseCase,
   type DedicatedLineOrderExecutionResult,
 } from './modules/dedicated-line-orders/process-dedicated-line-order.use-case';
+export { DedicatedLineInventoryRepository } from './modules/dedicated-line-orders/dedicated-line-inventory.repository';
 export { AlertsModule } from './modules/alerts/alerts.module';
 export { BarkAlertOutboxRepository } from './modules/alerts/bark-alert-outbox.repository';
 export {
