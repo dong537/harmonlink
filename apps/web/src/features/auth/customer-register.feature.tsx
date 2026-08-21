@@ -28,10 +28,10 @@ interface CurrentSiteResponse {
 }
 
 function resolveRegisterError(error: unknown, t: (key: string) => string) {
-  if (error instanceof ApiError) {
+  if (error instanceof ApiError && error.reasonKey) {
     if (error.reasonKey === 'email_taken') return t('customer.register.emailTaken');
-    if (error.reasonKey === 'invalid_site') return t('customer.register.networkError');
-    if (error.reasonKey) return t('customer.register.networkError');
+    // 缺少本地化文案时暴露后端 reasonKey，而不是一律显示网络错误。
+    return error.reasonKey;
   }
   return t('customer.register.networkError');
 }

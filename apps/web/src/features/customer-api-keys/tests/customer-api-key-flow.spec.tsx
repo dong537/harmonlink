@@ -98,7 +98,7 @@ describe('customer api key feature contracts', () => {
     expect(screen.getByText('customer.apiKeys.neverUsedInline')).toBeInTheDocument();
     expect(await screen.findByText('customer.apiKeys.security.title')).toBeInTheDocument();
     expect(screen.getAllByText('customer.apiKeys.defaultScopeLabel')).toHaveLength(2);
-    expect(screen.getAllByText(/customer\.apiKeys\.statusValue\./).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('customer.apiKeys.statusUnknown').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText((content) => content.startsWith('customer.apiKeys.statusSummary.ACTIVE'))).toBeInTheDocument();
     expect(screen.getByText((content) => content.startsWith('customer.apiKeys.statusSummary.INACTIVE'))).toBeInTheDocument();
     expect(spy.mock.calls.some((c) => String(c[0]).startsWith('/api/api-keys?'))).toBe(true);

@@ -197,9 +197,6 @@ export function CustomerApiKeyListFeature() {
       width: 260,
       render: (scopes: string[]) => (
         <Space direction="vertical" size={4}>
-          <Typography.Text type="secondary" className="ipx-api-key-scope-caption">
-            {t('customer.apiKeys.defaultScopeLabel')}
-          </Typography.Text>
           <Space size={[4, 4]} wrap>
           {scopes.length > 0
             ? scopes.map((scope) => (

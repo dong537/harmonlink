@@ -114,6 +114,6 @@ describe('CustomerRegisterFeature', () => {
     fillField('password', 'longenough1', 1);
     await user.click(screen.getByRole('button'));
 
-    await waitFor(() => expect(screen.getByText('email_taken')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('customer.register.emailTaken')).toBeTruthy());
   });
 });

@@ -137,6 +137,7 @@ export function AdminTicketListFeature() {
         toolbar={toolbar}
         rowKey="id"
         emptyText={t('adminTickets.empty')}
+        errorDescription={getReasonKey}
         pagination={{
           page,
           pageSize,
@@ -146,4 +147,9 @@ export function AdminTicketListFeature() {
       />
     </>
   );
+}
+
+function getReasonKey(error: unknown): string {
+  const apiError = error as { reasonKey?: string } | undefined;
+  return apiError?.reasonKey || (error instanceof Error ? error.message : String(error));
 }

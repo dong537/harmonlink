@@ -125,6 +125,7 @@ export function AuditLogListFeature() {
           total: query.data?.total ?? 0,
           onChange: (p, ps) => { setPage(p); setPageSize(ps); },
         }}
+        errorDescription={getReasonKey}
       />
     </>
   );
@@ -136,6 +137,11 @@ function shortId(value: string): string {
 
 function shortRequestId(value: string): string {
   return value.length > 18 ? `${value.slice(0, 12)}...${value.slice(-4)}` : value;
+}
+
+function getReasonKey(error: unknown): string {
+  const apiError = error as { reasonKey?: string } | undefined;
+  return apiError?.reasonKey || (error instanceof Error ? error.message : String(error));
 }
 
 function getAuditReasonKey(row: AuditLogDto): string | null {
