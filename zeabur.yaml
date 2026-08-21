@@ -1,0 +1,53 @@
+# Zeabur 项目配置
+name: ipeasy
+
+# 服务定义
+services:
+  # 后端 API
+  api:
+    source:
+      type: git
+      repo: your-org/your-repo
+      branch: railway-fixes-merge
+    build:
+      type: docker
+      dockerfile: apps/api/Dockerfile
+      context: .
+    deploy:
+      port: 8080
+      healthcheck:
+        path: /health
+        timeout: 100
+    env:
+      NODE_ENV: production
+      PORT: "8080"
+
+  # 前端 Web
+  web:
+    source:
+      type: git
+      repo: your-org/your-repo
+      branch: railway-fixes-merge
+    build:
+      type: docker
+      dockerfile: apps/web/Dockerfile
+      context: .
+    deploy:
+      port: 4173
+    env:
+      NODE_ENV: production
+      WEB_PORT: "4173"
+
+  # 后台 Worker
+  worker:
+    source:
+      type: git
+      repo: your-org/your-repo
+      branch: railway-fixes-merge
+    build:
+      type: docker
+      dockerfile: apps/worker/Dockerfile
+      context: .
+    env:
+      NODE_ENV: production
+      WORKER_ENABLED: "true"
