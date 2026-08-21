@@ -2,6 +2,17 @@
   "env": {
     "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1"
   },
+  "permissions": {
+    "allow": [
+      "Bash(node -e ' *)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\({vitest:p.devDependencies?.vitest, jsdom:p.devDependencies?.jsdom},null,1\\)\\)\")",
+      "Bash(node -e \"const p=require\\('./package.json'\\);console.log\\(JSON.stringify\\({engines:p.engines,pm:p.packageManager}\\)\\)\")",
+      "Bash(node -e \"const p=require\\('./apps/web/package.json'\\);console.log\\(JSON.stringify\\({engines:p.engines}\\)\\)\")",
+      "Bash(sort -u -t: -k2)",
+      "Bash(timeout 15 bash -c 'cat < /dev/null > /dev/tcp/yamabiko.proxy.rlwy.net/21267')",
+      "Bash(timeout 150 railway ssh --service Postgres-CVre 'psql -U postgres -d railway -tAc \"select count\\(*\\) from pg_tables where schemaname='\"'\"'public'\"'\"'\"')"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {

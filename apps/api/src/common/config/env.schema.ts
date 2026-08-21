@@ -51,6 +51,7 @@ const envSchema = z.object({
   PROXY_CHECK_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(30_000).default(8_000),
   DEDICATED_LINE_MIGRATION_SMOKE_TARGET_URL: z.string().url().default('http://127.0.0.1:18080/health'),
   DEDICATED_LINE_MIGRATION_SMOKE_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(30_000).default(8_000),
+  SCHEMA_DIAGNOSTIC_TOKEN: z.string().default(''),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

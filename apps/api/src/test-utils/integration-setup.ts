@@ -377,6 +377,7 @@ const defaultTestConfig: EnvConfig = {
   NODE_ENV: 'test',
   RELEASE_GIT_SHA: '0'.repeat(40),
   PORT: 3000,
+  SCHEMA_DIAGNOSTIC_TOKEN: '',
   DATABASE_URL: process.env['DATABASE_URL'] ?? process.env['DATABASE_URL_TEST'] ?? '',
   REDIS_URL: process.env['REDIS_URL'] ?? 'redis://localhost:6379',
   APP_ENCRYPTION_KEY: process.env['APP_ENCRYPTION_KEY'] ?? '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',

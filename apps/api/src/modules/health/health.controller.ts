@@ -1,8 +1,16 @@
-import { Controller, Get, Res } from '@nestjs/common';
+import { Controller, Get, Headers, Res } from '@nestjs/common';
 import { FastifyReply } from 'fastify';
 import { Socket } from 'net';
 import { prisma } from '@ipeasy/db';
 import { env } from '../../common/config/env.schema';
+
+interface SchemaDiagnosticReport {
+  database: string;
+  tableCount: number;
+  tables: string[];
+  appliedMigrations: string[];
+  pendingMigrations: string[];
+}
 
 @Controller()
 export class HealthController {
@@ -21,6 +29,42 @@ export class HealthController {
     const ok = checks.db.ok && checks.redis.ok;
     reply.status(ok ? 200 : 503).send({ status: ok ? 'ok' : 'error', timestamp, checks });
   }
+
+  @Get('internal/schema-diagnostic')
+  async schemaDiagnostic(
+    @Headers('x-schema-diagnostic-token') token: string | undefined,
+    @Res() reply: FastifyReply,
+  ): Promise<void> {
+    const expected = env.SCHEMA_DIAGNOSTIC_TOKEN;
+    if (!expected) {
+      reply.status(404).send({ reasonKey: 'not_found' });
+      return;
+    }
+    if (token !== expected) {
+      reply.status(403).send({ reasonKey: 'forbidden' });
+      return;
+    }
+    reply.status(200).send(await readSchemaDiagnostic());
+  }
+}
+
+async function readSchemaDiagnostic(): Promise<SchemaDiagnosticReport> {
+  const [database] = await prisma.$queryRaw<{ current_database: string }[]>`SELECT current_database()`;
+  const tables = await prisma.$queryRaw<{ table_name: string }[]>`
+    SELECT table_name FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+    ORDER BY table_name
+  `;
+  const migrations = await prisma.$queryRaw<{ migration_name: string; finished_at: Date | null }[]>`
+    SELECT migration_name, finished_at FROM "_prisma_migrations" ORDER BY started_at
+  `;
+  return {
+    database: database?.current_database ?? '',
+    tableCount: tables.length,
+    tables: tables.map((row) => row.table_name),
+    appliedMigrations: migrations.filter((row) => row.finished_at).map((row) => row.migration_name),
+    pendingMigrations: migrations.filter((row) => !row.finished_at).map((row) => row.migration_name),
+  };
 }
 
 async function checkDb(): Promise<{ ok: boolean; error?: string }> {
