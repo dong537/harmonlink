@@ -278,7 +278,7 @@ type MigrationJobOwner = {
 };
 
 function assertJobLease(job: DedicatedLineMigrationJob, workerId: string, desiredVersion = job.desiredVersion): void {
-  assertLeaseCompletion(job, { workerId, desiredVersion, now: new Date() });
+  assertLeaseCompletion(job, { workerId, desiredVersion, now: new Date(), onStale: staleMigrationLease });
 }
 
 function activeLeaseWhere(job: Pick<DedicatedLineMigrationJob, 'id' | 'desiredVersion'>, workerId: string, now: Date) {

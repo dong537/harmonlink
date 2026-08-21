@@ -311,7 +311,7 @@ export class DedicatedLineProjectionRepository {
 }
 
 function assertLease(job: DedicatedLineProjectionJob, workerId: string, desiredVersion = job.desiredVersion): void {
-  assertLeaseCompletion(job, { workerId, desiredVersion, now: new Date() });
+  assertLeaseCompletion(job, { workerId, desiredVersion, now: new Date(), onStale: staleProjectionLease });
 }
 
 function activeProjectionLeaseWhere(job: Pick<DedicatedLineProjectionJob, 'id' | 'desiredVersion'>, workerId: string, now: Date) {

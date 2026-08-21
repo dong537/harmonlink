@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '../../common/config/config.service';
 import { decryptAesGcm } from '../../common/crypto/aes-gcm';
 import { AppError } from '../../common/errors/app-error';
@@ -49,12 +49,18 @@ export type ManagedLineProjectionResponse = {
 
 type FetchLike = typeof fetch;
 
+export const MANAGED_LINE_PROJECTION_FETCH = 'MANAGED_LINE_PROJECTION_FETCH';
+
 @Injectable()
 export class ManagedLineProjectionAdapter {
+  private readonly fetchImpl: FetchLike;
+
   constructor(
     private readonly config: ConfigService,
-    private readonly fetchImpl: FetchLike = fetch,
-  ) {}
+    @Optional() @Inject(MANAGED_LINE_PROJECTION_FETCH) fetchImpl?: FetchLike,
+  ) {
+    this.fetchImpl = fetchImpl ?? fetch;
+  }
 
   async upsert(node: ManagedLineProjectionNode, projectionKey: string, request: ManagedLineProjectionRequest): Promise<ManagedLineProjectionResponse> {
     const response = await this.request(node, 'PUT', projectionKey, request);
