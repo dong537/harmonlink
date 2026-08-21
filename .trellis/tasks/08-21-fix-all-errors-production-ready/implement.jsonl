@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "W1/W2 改 api 与 worker 代码，需遵循后端质量底线：禁止注释掉活调用点换取检查通过、禁止用 _ 前缀或删变量掩盖漏用逻辑"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "W1 新建 dedicated-line-projection-worker.ts，需确认 worker 侧文件放置与命名约定"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "W1 worker poll 循环需正确处理 job 失败与未捕获异常，禁止 broad catch 吞错或失败当成功"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "W1 poll 循环日志字段需与既有 worker（fulfillment/migration）保持同构"}
+{"file": ".trellis/spec/architecture.md", "reason": "W1 涉及 worker 与 api 的模块边界：worker 只做薄 poll 循环，租约/状态机归 api repository"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "W3 修 12 个前端失败测试，需遵循前端质量底线"}
+{"file": ".trellis/spec/testing-deployment.md", "reason": "W3 定位测试共因，需确认测试命令与禁止放宽断言/加长超时的约束"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "W1 跨 worker/api 层，W3 可能跨测试/实现层，需先判断问题属于哪一层再改"}

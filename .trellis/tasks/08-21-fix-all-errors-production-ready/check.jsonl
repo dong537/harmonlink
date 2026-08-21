@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验收核心：确认没有用注释掉调用点、删变量、加 _ 前缀、放宽断言等手段伪造通过"}
+{"file": ".trellis/spec/testing-deployment.md", "reason": "按 spec 指定命令逐包运行 typecheck/lint/build/test，确认 worker projection 调用点仍启用"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "复核 worker poll 循环无 silent failure，job 失败有可见日志"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "复核 W3 修的是真实缺陷而非降低断言强度"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复核 W1 是否真正复用了 migration worker 范式与 WorkerLogger，而非另造一套平行实现"}
