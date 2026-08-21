@@ -5,11 +5,11 @@ import { requestIdStorage } from '../../common/logging/request-id.context';
 import { ProviderRuntimeConfig, UpstreamRequestStatus } from './provider.types';
 import { UpstreamLogRepository } from './upstream-log.repository';
 
-export async function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs: number): Promise<Response> {
+export async function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs: number, fetchImpl: typeof fetch = fetch): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...opts, signal: controller.signal });
+    return await fetchImpl(url, { ...opts, signal: controller.signal });
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'AbortError') {
       throw new AppError(ErrorCode.UPSTREAM_TIMEOUT, 'upstream_timeout', 504);

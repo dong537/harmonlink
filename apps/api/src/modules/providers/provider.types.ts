@@ -72,6 +72,8 @@ export interface ProxyDelivery {
 
 export interface ProviderOrderQuery {
   upstreamOrderId: string;
+  protocol?: 'HTTP' | 'SOCKS5';
+  countryCode?: string;
 }
 
 export interface ProviderOrderResult {
