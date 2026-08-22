@@ -170,3 +170,48 @@ function assertInput(input: ReserveDedicatedLineStockInput): void {
     throw new AppError(ErrorCode.VALIDATION_ERROR, 'dedicated_line_order_snapshot_invalid', 400);
   }
 }
+
+export type ExpiredReservationCandidate = {
+  reservationId: string;
+  siteId: string;
+  quantity: number;
+  jobId: string | null;
+  // True only when the purchase job provably never ran, so the upstream provider
+  // was never contacted and the money can be safely returned.
+  neverIssued: boolean;
+};
+
+export type ReclaimExpiredReservationsResult = {
+  scanned: number;
+  reclaimed: number;
+  skippedIssued: number;
+};
+
+export interface ExpiredReservationSource {
+  findExpiredCandidates(now: Date, limit: number): Promise<ExpiredReservationCandidate[]>;
+  reclaim(candidate: ExpiredReservationCandidate, now: Date): Promise<boolean>;
+}
+
+// Returns stock and money for reservations that expired before their purchase was
+// ever issued. A reservation whose purchase already reached the provider is left
+// untouched on purpose: the upstream resource may be paid for, so releasing it
+// here would refund a delivered order and oversell the inventory.
+export class ReclaimExpiredReservationsUseCase {
+  constructor(private readonly source: ExpiredReservationSource) {}
+
+  async execute(now: Date, limit = 100): Promise<ReclaimExpiredReservationsResult> {
+    const candidates = await this.source.findExpiredCandidates(now, limit);
+    let reclaimed = 0;
+    let skippedIssued = 0;
+
+    for (const candidate of candidates) {
+      if (!candidate.neverIssued) {
+        skippedIssued += 1;
+        continue;
+      }
+      if (await this.source.reclaim(candidate, now)) reclaimed += 1;
+    }
+
+    return { scanned: candidates.length, reclaimed, skippedIssued };
+  }
+}

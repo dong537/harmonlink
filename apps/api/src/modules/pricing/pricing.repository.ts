@@ -50,6 +50,19 @@ export type UpsertPriceRuleInput = {
   minQty?: number;
 };
 
+export type UpsertSkuPriceRuleInput = {
+  skuId: string;
+  durationDays: number;
+  unitPrice: string;
+  currency: string;
+  minQty?: number;
+};
+
+export type SkuPriceRuleQuery = {
+  templateId?: string;
+  skuId?: string;
+};
+
 export type PricingMatrixQuery = PageQueryDto & {
   providerCode?: string;
   ipType?: string;
@@ -372,6 +385,114 @@ export class PricingRepository {
     });
   }
 
+  async upsertSkuRules(templateId: string, siteId: string, rules: UpsertSkuPriceRuleInput[]) {
+    const template = await prisma.price_templates.findFirst({ where: { id: templateId, siteId } });
+    if (!template) throw new AppError(ErrorCode.NOT_FOUND, 'price_template_not_found', 404);
+    await assertDedicatedLineSkus(siteId, rules.map((rule) => rule.skuId));
+    return prisma.$transaction(
+      rules.map((rule) =>
+        prisma.sku_price_rules.upsert({
+          where: {
+            siteId_templateId_skuId_durationDays_minQty: {
+              siteId,
+              templateId,
+              skuId: rule.skuId,
+              durationDays: rule.durationDays,
+              minQty: rule.minQty ?? 1,
+            },
+          },
+          create: {
+            siteId,
+            templateId,
+            skuId: rule.skuId,
+            durationDays: rule.durationDays,
+            minQty: rule.minQty ?? 1,
+            unitPrice: new Decimal(rule.unitPrice),
+            currency: rule.currency,
+          },
+          update: {
+            unitPrice: new Decimal(rule.unitPrice),
+            currency: rule.currency,
+          },
+        }),
+      ),
+    );
+  }
+
+  async upsertSkuOverride(data: UpsertSkuPriceRuleInput & { siteId: string }) {
+    await assertDedicatedLineSkus(data.siteId, [data.skuId]);
+    const minQty = data.minQty ?? 1;
+    return prisma.sku_price_overrides.upsert({
+      where: {
+        siteId_skuId_durationDays_minQty: {
+          siteId: data.siteId,
+          skuId: data.skuId,
+          durationDays: data.durationDays,
+          minQty,
+        },
+      },
+      create: {
+        siteId: data.siteId,
+        skuId: data.skuId,
+        durationDays: data.durationDays,
+        minQty,
+        unitPrice: new Decimal(data.unitPrice),
+        currency: data.currency,
+      },
+      update: {
+        unitPrice: new Decimal(data.unitPrice),
+        currency: data.currency,
+      },
+    });
+  }
+
+  async upsertUserSkuOverride(data: UpsertSkuPriceRuleInput & { siteId: string; tenantId: string; userId: string }) {
+    await assertDedicatedLineSkus(data.siteId, [data.skuId]);
+    const buyer = await prisma.users.findFirst({
+      where: { id: data.userId, siteId: data.siteId, tenantId: data.tenantId },
+      select: { id: true },
+    });
+    if (!buyer) throw new AppError(ErrorCode.NOT_FOUND, 'user_not_found', 404);
+    const minQty = data.minQty ?? 1;
+    return prisma.user_sku_price_overrides.upsert({
+      where: {
+        siteId_userId_skuId_durationDays_minQty: {
+          siteId: data.siteId,
+          userId: data.userId,
+          skuId: data.skuId,
+          durationDays: data.durationDays,
+          minQty,
+        },
+      },
+      create: {
+        siteId: data.siteId,
+        tenantId: data.tenantId,
+        userId: data.userId,
+        skuId: data.skuId,
+        durationDays: data.durationDays,
+        minQty,
+        unitPrice: new Decimal(data.unitPrice),
+        currency: data.currency,
+      },
+      update: {
+        unitPrice: new Decimal(data.unitPrice),
+        currency: data.currency,
+      },
+    });
+  }
+
+  listSkuRules(siteId: string, query: SkuPriceRuleQuery = {}) {
+    return prisma.sku_price_rules.findMany({
+      where: {
+        siteId,
+        ...(query.templateId ? { templateId: query.templateId } : {}),
+        ...(query.skuId ? { skuId: query.skuId } : {}),
+      },
+      orderBy: [{ durationDays: 'asc' }, { minQty: 'asc' }],
+      include: { sku: { select: { id: true, code: true, name: true } } },
+    });
+  }
+
   async listMatrixSummary(siteId: string, query: PricingMatrixSummaryQuery = {}): Promise<PricingMatrixSummaryItem[]> {
     const durationDays = parsePositiveInteger(query.durationDays, 30, 'durationDays');
     const currency = query.currency || undefined;
@@ -550,6 +671,27 @@ type PriceRow =
   | Prisma.price_rulesGetPayload<Record<string, never>>
   | Prisma.price_overridesGetPayload<Record<string, never>>
   | null;
+
+async function assertDedicatedLineSkus(siteId: string, skuIds: string[]): Promise<void> {
+  const uniqueSkuIds = [...new Set(skuIds)];
+  const skus = await prisma.service_skus.findMany({
+    where: { id: { in: uniqueSkuIds }, siteId },
+    select: { id: true, capabilities: true },
+  });
+  const byId = new Map(skus.map((sku) => [sku.id, sku]));
+  for (const skuId of uniqueSkuIds) {
+    const sku = byId.get(skuId);
+    if (!sku) throw new AppError(ErrorCode.NOT_FOUND, 'sku_not_found', 404);
+    if (!isDedicatedLineCapabilities(sku.capabilities)) {
+      throw new AppError(ErrorCode.VALIDATION_ERROR, 'sku_not_dedicated_line', 422);
+    }
+  }
+}
+
+function isDedicatedLineCapabilities(capabilities: Prisma.JsonValue): boolean {
+  if (capabilities === null || Array.isArray(capabilities) || typeof capabilities !== 'object') return false;
+  return (capabilities as Record<string, unknown>)['delivery'] === 'dedicated-line';
+}
 
 const PRICE_MISSING_REASONS = new Set(['price_missing', 'no_price_rule', 'not_configured']);
 

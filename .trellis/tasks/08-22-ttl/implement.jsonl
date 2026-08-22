@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "回收要在单事务内完成状态写入+库存递减+退款+job 收尾，需遵守事务与 Prisma 访问规范"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "移除 stock_reservation_expired 422 并定义跳过项的可见性，涉及 AppError/ErrorCode 语义"}
+{"file": ".trellis/spec/architecture.md", "reason": "回收器属于 use-case 层，扫描属 repository 层，决定新代码落点"}
+{"file": "docs/architecture/专线平台全流程.md", "reason": "修复顺序第 5 项来源，含 TTL 无执行者的核实结论"}
+{"file": ".trellis/tasks/08-22-ttl/prd.md", "reason": "本任务的 TTL 语义决策与回收判定条件"}

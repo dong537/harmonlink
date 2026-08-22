@@ -5,7 +5,8 @@ import { CatalogModule } from '../catalog/catalog.module';
 import { DedicatedLineOrdersController } from './dedicated-line-orders.controller';
 import { CreateDedicatedLineOrderUseCase } from './create-dedicated-line-order.use-case';
 import { RenewDedicatedLineUseCase } from './renew-dedicated-line.use-case';
-import { ReserveDedicatedLineStockUseCase } from './domain';
+import { ReclaimExpiredReservationsUseCase, ReserveDedicatedLineStockUseCase } from './domain';
+import { ReclaimExpiredReservationsRepository } from './reclaim-expired-reservations.repository';
 import { DedicatedLineInventoryRepository } from './dedicated-line-inventory.repository';
 import { DedicatedLineOrderRepository } from './dedicated-line-order.repository';
 import { ProcessDedicatedLineOrderUseCase } from './process-dedicated-line-order.use-case';
@@ -20,6 +21,7 @@ import { WalletModule } from '../wallet/wallet.module';
     DedicatedLineInventoryRepository,
     DedicatedLineOrderRepository,
     DedicatedLinePlacementRepository,
+    ReclaimExpiredReservationsRepository,
     ProcessDedicatedLineOrderUseCase,
     CreateDedicatedLineOrderUseCase,
     RenewDedicatedLineUseCase,
@@ -28,6 +30,11 @@ import { WalletModule } from '../wallet/wallet.module';
       inject: [DedicatedLineInventoryRepository],
       useFactory: (inventory: DedicatedLineInventoryRepository) => new ReserveDedicatedLineStockUseCase(inventory),
     },
+    {
+      provide: ReclaimExpiredReservationsUseCase,
+      inject: [ReclaimExpiredReservationsRepository],
+      useFactory: (source: ReclaimExpiredReservationsRepository) => new ReclaimExpiredReservationsUseCase(source),
+    },
   ],
   exports: [
     DedicatedLineInventoryRepository,
@@ -35,6 +42,7 @@ import { WalletModule } from '../wallet/wallet.module';
     ProcessDedicatedLineOrderUseCase,
     CreateDedicatedLineOrderUseCase,
     RenewDedicatedLineUseCase,
+    ReclaimExpiredReservationsUseCase,
   ],
 })
 export class DedicatedLineOrdersModule {}

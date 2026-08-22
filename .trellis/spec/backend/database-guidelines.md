@@ -1185,3 +1185,37 @@ await resourcesRepo.upsertInventorySnapshot({
 ```
 
 The latest snapshot is the inventory source of truth; the resource row is not.
+
+## 库存预留的生命周期与回收
+
+`dedicated_line_inventory_snapshots.reservedQuantity` 是一个**计数器**，不是按 `ACTIVE`
+预留实时聚合出来的值。预留过期时它不会自动回落，必须有人显式递减。
+
+`releaseReservationTx` 是这个计数器唯一的递减者，也是 `stock_reservations` 进入终态的
+唯一入口。任何新的释放路径都必须调用它，不得复制那段 `reservedQuantity` 递减 SQL —— 两份
+平行实现会让计数器被递减两次，直接表现为超卖。
+
+它用 `terminalStatus` 区分两条来源：
+
+- `RELEASED`：worker 显式判定采购失败后释放；
+- `EXPIRED`：TTL 到期由回收器扫走。
+
+它内部以 `status = 'ACTIVE'` 为条件更新并返回 `boolean`，因此并发的 worker 释放与回收器
+扫描之间天然互斥：先到者赢，后到者拿到 `false` 并跳过，不会二次退款或二次归还库存。
+
+### 回收的唯一安全判据
+
+预留能否被回收，取决于**是否已向上游发出采购请求**，而不是错误码或时间。
+可判定信号是采购 job 的 `attempt = 0 AND status = 'QUEUED'`：
+
+- `attempt` 由 `claimRunnableJob` 在领取时递增，领取即代表进入执行；
+- 租约超时的 job 被 `recoverExpiredLeases` 打成 `NEEDS_OPERATOR`，不会退回 `QUEUED`，
+  所以 worker 崩溃不会让已执行的 job 伪装成未执行。
+
+找不到对应 job 时**不回收**：无法证明上游未被联系，宁可留给人工。
+
+### TTL 不是交付截止时间
+
+预留 TTL 只约束「同步下单阶段」。一旦 job 进入 worker，上游采购是轮询式的，正常的慢速
+交付本身就会超过 TTL。因此落库路径**不得**再把 TTL 当作过期判据去拒绝交付 —— 那会让已付款
+且已拿到资源的订单落库失败。钱和库存的归还只由上面的「未发出采购」判据决定。

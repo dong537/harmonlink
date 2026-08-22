@@ -5,7 +5,7 @@ import { RequireAuth, RequireUser } from '../../common/auth/guards';
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { PageQueryDto } from '../../common/pagination/pagination.dto';
-import { PricingMatrixQuery, PricingMatrixSummaryQuery, PricingRepository } from './pricing.repository';
+import { PricingMatrixQuery, PricingMatrixSummaryQuery, PricingRepository, SkuPriceRuleQuery } from './pricing.repository';
 import { QuoteInput } from './domain';
 import { QuoteUseCase } from './use-cases/quote.use-case';
 import { ResourcesRepository } from '../resources/resources.repository';
@@ -45,6 +45,21 @@ type PriceableCatalogGroupOverrideBody = {
 };
 
 type UserPriceOverrideBody = PriceOverrideBody & {
+  tenantId: string;
+  userId: string;
+};
+
+type SkuPriceRuleBody = {
+  skuId: string;
+  durationDays: number;
+  unitPrice: string;
+  currency: string;
+  minQty?: number;
+};
+
+type SkuPriceRulesBody = SkuPriceRuleBody | { rules: SkuPriceRuleBody[] };
+
+type UserSkuPriceOverrideBody = SkuPriceRuleBody & {
   tenantId: string;
   userId: string;
 };
@@ -180,6 +195,70 @@ export class PricingController {
     return this.repo.upsertUserOverride({ ...body, siteId: ctx.siteId });
   }
 
+  @Post('sku-templates/:id/rules')
+  @RequireAuth()
+  createSkuRules(
+    @CurrentContext() ctx: AuthenticatedContext,
+    @Param('id') templateId: string,
+    @Body() body: SkuPriceRulesBody,
+  ) {
+    assertAdmin(ctx);
+    const rules = normalizeSkuRulesBody(body);
+    return this.repo.upsertSkuRules(templateId, ctx.siteId, rules);
+  }
+
+  @Post('sku-overrides')
+  @RequireAuth()
+  createSkuOverride(
+    @CurrentContext() ctx: AuthenticatedContext,
+    @Body() body: SkuPriceRuleBody,
+  ) {
+    assertAdmin(ctx);
+    assertSkuPriceBody(body);
+    return this.repo.upsertSkuOverride({
+      siteId: ctx.siteId,
+      skuId: body.skuId,
+      durationDays: Number(body.durationDays),
+      unitPrice: String(body.unitPrice),
+      currency: body.currency,
+      minQty: body.minQty === undefined ? undefined : Number(body.minQty),
+    });
+  }
+
+  @Post('user-sku-overrides')
+  @RequireAuth()
+  createUserSkuOverride(
+    @CurrentContext() ctx: AuthenticatedContext,
+    @Body() body: UserSkuPriceOverrideBody,
+  ) {
+    assertAdmin(ctx);
+    assertSkuPriceBody(body);
+    if (!body.tenantId || !body.userId) {
+      throw new AppError(ErrorCode.VALIDATION_ERROR, 'user_price_target_required', 400);
+    }
+    assertTenantWriteAllowed(ctx, body.tenantId);
+    return this.repo.upsertUserSkuOverride({
+      siteId: ctx.siteId,
+      tenantId: body.tenantId,
+      userId: body.userId,
+      skuId: body.skuId,
+      durationDays: Number(body.durationDays),
+      unitPrice: String(body.unitPrice),
+      currency: body.currency,
+      minQty: body.minQty === undefined ? undefined : Number(body.minQty),
+    });
+  }
+
+  @Get('sku-rules')
+  @RequireAuth()
+  listSkuRules(
+    @CurrentContext() ctx: AuthenticatedContext,
+    @Query() query: SkuPriceRuleQuery,
+  ) {
+    assertAdmin(ctx);
+    return this.repo.listSkuRules(ctx.siteId, query);
+  }
+
   @Post('user-template-bindings')
   @RequireAuth()
   bindUserTemplate(
@@ -272,6 +351,36 @@ function assertPriceBody(body: PriceOverrideBody): void {
   }
   if (!body.currency) throw new AppError(ErrorCode.VALIDATION_ERROR, 'currency_required', 400);
   if (hasMinQty(body) && body.minQty !== undefined && (!Number.isInteger(Number(body.minQty)) || Number(body.minQty) < 1)) {
+    throw new AppError(ErrorCode.VALIDATION_ERROR, 'min_qty_invalid', 400);
+  }
+}
+
+function normalizeSkuRulesBody(body: SkuPriceRulesBody): SkuPriceRuleBody[] {
+  const rules = 'rules' in body ? body.rules : [body];
+  if (!Array.isArray(rules) || rules.length === 0) {
+    throw new AppError(ErrorCode.VALIDATION_ERROR, 'price_rules_required', 400);
+  }
+  return rules.map((rule) => {
+    assertSkuPriceBody(rule);
+    return {
+      ...rule,
+      durationDays: Number(rule.durationDays),
+      unitPrice: String(rule.unitPrice),
+      minQty: rule.minQty === undefined ? undefined : Number(rule.minQty),
+    };
+  });
+}
+
+function assertSkuPriceBody(body: SkuPriceRuleBody): void {
+  if (!body.skuId) throw new AppError(ErrorCode.VALIDATION_ERROR, 'sku_id_required', 400);
+  if (!Number.isInteger(Number(body.durationDays)) || Number(body.durationDays) < 1) {
+    throw new AppError(ErrorCode.VALIDATION_ERROR, 'duration_days_invalid', 400);
+  }
+  if (!isNonNegativeDecimalString(body.unitPrice)) {
+    throw new AppError(ErrorCode.VALIDATION_ERROR, 'unit_price_invalid', 400);
+  }
+  if (!body.currency) throw new AppError(ErrorCode.VALIDATION_ERROR, 'currency_required', 400);
+  if (body.minQty !== undefined && (!Number.isInteger(Number(body.minQty)) || Number(body.minQty) < 1)) {
     throw new AppError(ErrorCode.VALIDATION_ERROR, 'min_qty_invalid', 400);
   }
 }

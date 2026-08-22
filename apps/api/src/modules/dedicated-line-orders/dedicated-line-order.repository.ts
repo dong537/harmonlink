@@ -135,9 +135,11 @@ export class DedicatedLineOrderRepository {
         if (reservation.status !== 'ACTIVE') {
           throw new AppError(ErrorCode.IDEMPOTENCY_CONFLICT, 'stock_reservation_not_active', 409);
         }
-        if (reservation.expiresAt.getTime() <= Date.now()) {
-          throw new AppError(ErrorCode.UPSTREAM_OUT_OF_STOCK, 'stock_reservation_expired', 422);
-        }
+        // Deliberately no expiry check here. Upstream purchase is poll-based, so a
+        // slow but successful delivery routinely outlives the 5-minute reservation
+        // TTL. Rejecting it would strand a paid-for upstream resource. Once the
+        // purchase has been issued the reservation is no longer TTL-governed; only
+        // never-issued reservations are reclaimed (see reclaim-expired-reservations).
 
         const policy = await loadPlacementPolicy(tx, job.siteId, job.tenantId, job.userId, input.skuId, input.placementPolicyId);
         if (!policy || policy.inboundProfileId !== input.exits[0]?.inboundProfileId || policy.inboundTag !== input.inboundTag) {
@@ -500,21 +502,34 @@ function staleDedicatedLineOrderLease(): never {
   throw new AppError(ErrorCode.IDEMPOTENCY_CONFLICT, 'dedicated_line_order_lease_stale', 409);
 }
 
-async function releaseReservationTx(tx: Prisma.TransactionClient, reservationId: string): Promise<void> {
+// Sole owner of the `reservedQuantity` counter decrement. `terminalStatus`
+// distinguishes a worker-decided release (RELEASED) from a TTL sweep reclaim
+// (EXPIRED); both must return stock through this one path so the counter can
+// never be decremented twice or by a divergent copy of this SQL.
+// Returns false when the reservation is no longer ACTIVE, so a concurrent
+// release and reclaim cannot both act on it.
+export async function releaseReservationTx(
+  tx: Prisma.TransactionClient,
+  reservationId: string,
+  terminalStatus: 'RELEASED' | 'EXPIRED' = 'RELEASED',
+  releasedAt: Date = new Date(),
+): Promise<boolean> {
   const reservation = await tx.stock_reservations.findUnique({ where: { id: reservationId } });
-  if (!reservation || reservation.status !== 'ACTIVE') return;
-  await tx.stock_reservations.update({
-    where: { id: reservation.id },
-    data: { status: 'RELEASED', releasedAt: new Date() },
+  if (!reservation || reservation.status !== 'ACTIVE') return false;
+  const claimed = await tx.stock_reservations.updateMany({
+    where: { id: reservation.id, status: 'ACTIVE' },
+    data: { status: terminalStatus, releasedAt },
   });
+  if (claimed.count !== 1) return false;
   await tx.$executeRaw(Prisma.sql`
     UPDATE "dedicated_line_inventory_snapshots"
     SET "reservedQuantity" = GREATEST(0, "reservedQuantity" - ${reservation.quantity})
     WHERE "id" = ${reservation.inventorySnapshotId}
   `);
+  return true;
 }
 
-async function refundReservationTx(
+export async function refundReservationTx(
   tx: Prisma.TransactionClient,
   reservationId: string,
   walletRepository: WalletRepository,

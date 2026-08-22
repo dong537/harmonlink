@@ -46,6 +46,8 @@ const envSchema = z.object({
   WORKER_DEDICATED_LINE_MIGRATION_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(20),
   WORKER_BARK_OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().min(1_000).default(5_000),
   WORKER_BARK_OUTBOX_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(20),
+  WORKER_DEDICATED_LINE_RESERVATION_RECLAIM_INTERVAL_MS: z.coerce.number().int().min(10_000).default(60_000),
+  WORKER_DEDICATED_LINE_RESERVATION_RECLAIM_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(100),
   WORKER_INVENTORY_SYNC_INTERVAL_MS: z.coerce.number().int().min(60_000).default(300_000),
   PROXY_CHECK_TARGET_URL: z.string().url().default('http://api.ipify.org/?format=json'),
   PROXY_CHECK_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(30_000).default(8_000),

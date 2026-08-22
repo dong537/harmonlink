@@ -23,6 +23,7 @@ import {
   DedicatedLineMigrationsModule,
   DedicatedLineMigrationJobRepository,
   ProcessMigrationJobUseCase,
+  ReclaimExpiredReservationsUseCase,
   PrismaModule,
   env,
 } from '@ipeasy/api/worker';
@@ -91,6 +92,28 @@ async function bootstrap(): Promise<void> {
       workerId: `dedicated-line-migration-${randomUUID()}`,
     },
   );
+  // Expired reservations hold both stock and the customer's money. Nothing else
+  // in the system returns them, so this sweep is not optional and has no enable
+  // flag: it only ever touches reservations whose purchase was never issued.
+  const reclaimReservations = app.get(ReclaimExpiredReservationsUseCase);
+  const runReclaimReservations = async (): Promise<void> => {
+    try {
+      const result = await reclaimReservations.execute(
+        new Date(),
+        env.WORKER_DEDICATED_LINE_RESERVATION_RECLAIM_BATCH_SIZE,
+      );
+      if (result.scanned > 0) {
+        console.info(`dedicated_line_reservation_reclaim_result ${JSON.stringify(result)}`);
+      }
+    } catch (err: unknown) {
+      console.error(
+        `dedicated_line_reservation_reclaim_failed ${JSON.stringify({
+          error: err instanceof Error ? err.message : String(err),
+        })}`,
+      );
+    }
+  };
+
   const controlNodeHealth = app.get(ProcessControlNodeHealthUseCase);
   const runControlNodeHealth = async (): Promise<void> => {
     if (env.DEDICATED_LINE_HEALTH_EXECUTION_ENABLED !== 'true') return;
@@ -116,6 +139,7 @@ async function bootstrap(): Promise<void> {
   console.info(`Dedicated-line projection worker started with interval ${env.WORKER_DEDICATED_LINE_PROJECTION_POLL_INTERVAL_MS}ms`);
   console.info(`Dedicated-line migration worker started with interval ${env.WORKER_DEDICATED_LINE_MIGRATION_POLL_INTERVAL_MS}ms`);
   console.info('Dedicated-line control-node health probe started');
+  console.info(`Dedicated-line reservation reclaim started with interval ${env.WORKER_DEDICATED_LINE_RESERVATION_RECLAIM_INTERVAL_MS}ms`);
   await worker.poll();
   await inventoryWorker.poll();
   await dedicatedLineOrderWorker.poll();
@@ -123,6 +147,7 @@ async function bootstrap(): Promise<void> {
   await dedicatedLineProjectionWorker.poll();
   await dedicatedLineMigrationWorker.poll();
   await runControlNodeHealth();
+  await runReclaimReservations();
   const timer = setInterval(() => {
     void worker.poll();
   }, env.WORKER_FULFILLMENT_POLL_INTERVAL_MS);
@@ -144,6 +169,9 @@ async function bootstrap(): Promise<void> {
   const controlNodeHealthTimer = setInterval(() => {
     void runControlNodeHealth();
   }, env.WORKER_DEDICATED_LINE_PROJECTION_POLL_INTERVAL_MS);
+  const reservationReclaimTimer = setInterval(() => {
+    void runReclaimReservations();
+  }, env.WORKER_DEDICATED_LINE_RESERVATION_RECLAIM_INTERVAL_MS);
 
   const shutdown = async (): Promise<void> => {
     globalThis.clearInterval(timer);
@@ -153,6 +181,7 @@ async function bootstrap(): Promise<void> {
     globalThis.clearInterval(dedicatedLineProjectionTimer);
     globalThis.clearInterval(dedicatedLineMigrationTimer);
     globalThis.clearInterval(controlNodeHealthTimer);
+    globalThis.clearInterval(reservationReclaimTimer);
     await app.close();
     process.exit(0);
   };
