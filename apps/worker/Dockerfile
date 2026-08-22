@@ -8,13 +8,10 @@ COPY . .
 
 RUN pnpm install --frozen-lockfile --prod=false
 RUN pnpm --filter @ipeasy/db generate
-RUN pnpm --filter @ipeasy/api... build
+RUN pnpm --filter @ipeasy/worker... build
 
-WORKDIR /app/apps/api
+WORKDIR /app/apps/worker
 
 ENV NODE_ENV=production
-ENV PORT=8080
 
-EXPOSE 8080
-
-CMD ["node", "dist/main"]
+CMD ["node", "dist/worker/src/main.js"]

@@ -1,0 +1,5 @@
+{
+  "install_command": "pnpm install --frozen-lockfile --prod=false",
+  "build_command": "pnpm --filter @ipeasy/db generate && pnpm --filter @ipeasy/worker... build",
+  "start_command": "node apps/worker/dist/worker/src/main.js"
+}
