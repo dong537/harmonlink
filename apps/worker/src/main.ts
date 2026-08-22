@@ -23,6 +23,7 @@ import {
   DedicatedLineMigrationsModule,
   DedicatedLineMigrationJobRepository,
   ProcessMigrationJobUseCase,
+  PrismaModule,
   env,
 } from '@ipeasy/api/worker';
 import { FulfillmentWorker } from './fulfillment-worker';
@@ -34,7 +35,7 @@ import { randomUUID } from 'node:crypto';
 import { DedicatedLineMigrationWorker } from './dedicated-line-migration-worker';
 
 @Module({
-  imports: [FulfillmentModule, ResourcesModule, DedicatedLineOrdersModule, DedicatedLineProjectionsModule, DedicatedLineHealthModule, AlertsModule, DedicatedLineMigrationsModule],
+  imports: [PrismaModule, FulfillmentModule, ResourcesModule, DedicatedLineOrdersModule, DedicatedLineProjectionsModule, DedicatedLineHealthModule, AlertsModule, DedicatedLineMigrationsModule],
 })
 class WorkerAppModule {}
 

@@ -1,5 +1,6 @@
 export { ConfigGuard } from './common/config/config-guard';
 export { env } from './common/config/env.schema';
+export { PrismaModule } from './common/prisma/prisma.module';
 export { FulfillmentModule } from './modules/fulfillment/fulfillment.module';
 export { FulfillmentRepository } from './modules/fulfillment/fulfillment.repository';
 export { FulfillStaticProxyUseCase } from './modules/fulfillment/use-cases/fulfill-static-proxy.use-case';

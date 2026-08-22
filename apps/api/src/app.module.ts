@@ -4,6 +4,7 @@ import { MaintenanceMiddleware } from './common/maintenance/maintenance.middlewa
 import { HealthController } from './modules/health/health.controller';
 import { ConfigService } from './common/config/config.service';
 import { LoggerService } from './common/logging/logger.service';
+import { PrismaModule } from './common/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ApiKeysModule } from './modules/api-keys/api-keys.module';
 import { WalletModule } from './modules/wallet/wallet.module';
@@ -34,7 +35,7 @@ import { ProductionReadinessModule } from './modules/production-readiness/produc
 import { ApiV1CompatModule } from './modules/api-v1-compat/api-v1-compat.module';
 
 @Module({
-  imports: [AuthModule, ApiKeysModule, WalletModule, PaymentsModule, ProvidersModule, ResourcesModule, PricingModule, OrdersModule, ProxiesModule, OpenApiModule, TenantsModule, SitesModule, UpstreamAccountsModule, UsersModule, AuditModule, TicketsModule, NotificationsModule, ProxyCheckModule, UpstreamRequestLogsModule, CustomerResellerModule, CatalogModule, DedicatedLineOrdersModule, DedicatedLinesModule, DedicatedLineMigrationsModule, DedicatedLineHealthModule, DedicatedLineProjectionsModule, ProductionReadinessModule, ApiV1CompatModule],
+  imports: [PrismaModule, AuthModule, ApiKeysModule, WalletModule, PaymentsModule, ProvidersModule, ResourcesModule, PricingModule, OrdersModule, ProxiesModule, OpenApiModule, TenantsModule, SitesModule, UpstreamAccountsModule, UsersModule, AuditModule, TicketsModule, NotificationsModule, ProxyCheckModule, UpstreamRequestLogsModule, CustomerResellerModule, CatalogModule, DedicatedLineOrdersModule, DedicatedLinesModule, DedicatedLineMigrationsModule, DedicatedLineHealthModule, DedicatedLineProjectionsModule, ProductionReadinessModule, ApiV1CompatModule],
   controllers: [HealthController],
   providers: [ConfigService, LoggerService],
   exports: [ConfigService, LoggerService],
