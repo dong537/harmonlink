@@ -154,6 +154,9 @@ importers:
         specifier: 3.24.1
         version: 3.24.1
     devDependencies:
+      '@ipeasy/eslint-config':
+        specifier: workspace:*
+        version: link:../../packages/eslint-config
       '@playwright/test':
         specifier: 1.52.0
         version: 1.52.0
@@ -178,6 +181,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: 3.2.4
         version: 3.2.4(vitest@3.2.4(@types/node@22.10.5)(jiti@2.7.0)(jsdom@26.1.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.12))
+      eslint:
+        specifier: 9.39.5
+        version: 9.39.5(jiti@2.7.0)
       jsdom:
         specifier: 26.1.0
         version: 26.1.0

@@ -26,7 +26,7 @@ const cryptoMock = vi.hoisted(() => {
   const digest = vi.fn(() => 'hashed-token');
   const update = vi.fn(() => ({ digest }));
   return {
-    randomBytes: vi.fn(() => Buffer.from('plain-token-seed')),
+    randomBytes: vi.fn(() => Buffer.from('synthetic-impersonation-token-seed')),
     createHash: vi.fn(() => ({ update })),
     update,
     digest,
@@ -63,13 +63,14 @@ describe('ImpersonateUserUseCase', () => {
     const useCase = new ImpersonateUserUseCase();
 
     const result = await useCase.execute(ctx(), 'user-1');
+    const expectedToken = Buffer.from('synthetic-impersonation-token-seed').toString('hex');
 
     expect(prismaMock.usersFindFirst).toHaveBeenCalledWith({
       where: { id: 'user-1', siteId: 'site-1', status: 'ACTIVE' },
       select: { id: true, tenantId: true },
     });
     expect(cryptoMock.createHash).toHaveBeenCalledWith('sha256');
-    expect(cryptoMock.update).toHaveBeenCalledWith('706c61696e2d746f6b656e2d73656564');
+    expect(cryptoMock.update).toHaveBeenCalledWith(expectedToken);
     expect(prismaMock.sessionsCreate).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         ownerType: 'USER',
@@ -92,7 +93,7 @@ describe('ImpersonateUserUseCase', () => {
       }),
     });
     expect(result).toEqual({
-      token: '706c61696e2d746f6b656e2d73656564',
+      token: expectedToken,
       expiresAt: new Date('2026-06-13T08:00:00.000Z'),
     });
   });

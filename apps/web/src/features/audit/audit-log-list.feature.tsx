@@ -3,7 +3,7 @@ import { DatePicker, Select, Space, Tag, Typography } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { ColumnsType } from 'antd/es/table';
-import { apiRequest, buildQuery } from '../../shared/api/client';
+import { apiRequest, buildQuery, ApiError } from '../../shared/api/client';
 import { ListPage } from '../../shared/ui/list-page';
 import { formatDateTime } from '../../shared/time/time';
 
@@ -119,13 +119,13 @@ export function AuditLogListFeature() {
         columns={columns}
         toolbar={toolbar}
         rowKey="id"
+        errorDescription={(error) => error instanceof ApiError ? error.reasonKey : t('error')}
         pagination={{
           page,
           pageSize,
           total: query.data?.total ?? 0,
           onChange: (p, ps) => { setPage(p); setPageSize(ps); },
         }}
-        errorDescription={getReasonKey}
       />
     </>
   );
@@ -137,11 +137,6 @@ function shortId(value: string): string {
 
 function shortRequestId(value: string): string {
   return value.length > 18 ? `${value.slice(0, 12)}...${value.slice(-4)}` : value;
-}
-
-function getReasonKey(error: unknown): string {
-  const apiError = error as { reasonKey?: string } | undefined;
-  return apiError?.reasonKey || (error instanceof Error ? error.message : String(error));
 }
 
 function getAuditReasonKey(row: AuditLogDto): string | null {

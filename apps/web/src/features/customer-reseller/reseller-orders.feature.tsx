@@ -11,20 +11,32 @@ import { PageHeader } from '../../shared/ui/page-header';
 import { formatDateTime } from '../../shared/time/time';
 import { formatMoneyAmount } from '../../shared/money/money';
 import { orderStatusColor } from '../../shared/order/order-labels';
-import { formatResourceLocationZh } from '../../shared/resource/resource-labels';
 import { getBackendReason, resellerCompactInputStyle, resellerCompactSelectStyle, resellerHeroStyle, resellerIconStyle, resellerMetricBodyStyle, resellerMetricToneStyle, resellerSummaryStripStyle, resellerToolbarFiltersStyle, resellerToolbarStyle, resellerWorkspaceHeaderStyle } from './reseller-ui';
 
 interface ResellerOrder {
   id: string;
   userId: string;
   user?: { email?: string };
-  resource?: { code?: string; name?: string; displayName?: string | null; countryCode?: string | null; upstreamResourceId?: string | null };
-  type: string;
-  status: string;
+  sku: { code: string; name: string };
+  countryCode: string;
+  regionCode?: string | null;
+  businessType?: string | null;
   quantity: number;
   durationDays: number;
+  unitPrice: string;
   totalPrice: string;
   currency: string;
+  priceSource: string;
+  contractVersion: number;
+  execution: {
+    status: 'QUEUED' | 'LEASED' | 'RETRYING' | 'COMPLETED' | 'FAILED' | 'NEEDS_OPERATOR';
+    attempt: number;
+    maxAttempts: number;
+    lastErrorCode?: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  lineStatuses: Record<string, number>;
   createdAt: string;
   updatedAt?: string | null;
 }
@@ -45,9 +57,9 @@ export function ResellerOrdersFeature() {
   });
 
   const orderItems = query.data?.items ?? [];
-  const completedCount = orderItems.filter((item) => item.status === 'COMPLETED').length;
-  const pendingCount = orderItems.filter((item) => item.status === 'PENDING' || item.status === 'FULFILLING').length;
-  const failedCount = orderItems.filter((item) => item.status === 'FAILED' || item.status === 'REFUNDED').length;
+  const completedCount = orderItems.filter((item) => item.execution.status === 'COMPLETED').length;
+  const pendingCount = orderItems.filter((item) => item.execution.status === 'QUEUED' || item.execution.status === 'RETRYING' || item.execution.status === 'LEASED').length;
+  const failedCount = orderItems.filter((item) => item.execution.status === 'FAILED' || item.execution.status === 'NEEDS_OPERATOR').length;
   const hasActiveFilters = Boolean(status || userId);
 
   const columns: ColumnsType<ResellerOrder> = [
@@ -56,10 +68,10 @@ export function ResellerOrdersFeature() {
       dataIndex: 'id',
       key: 'id',
       width: 220,
-      render: (value: string, row) => (
+      render: (value: string) => (
         <Space direction="vertical" size={2}>
           <Typography.Text copyable>{value}</Typography.Text>
-          <Tag>{formatOrderType(row.type)}</Tag>
+          <Tag>{t('customer.reseller.orders.dedicatedLine')}</Tag>
         </Space>
       ),
     },
@@ -77,28 +89,26 @@ export function ResellerOrdersFeature() {
     },
     {
       title: t('customer.reseller.orders.product'),
-      key: 'resource',
+      key: 'sku',
       width: 280,
       render: (_: unknown, row) => (
         <Space direction="vertical" size={2}>
-          <Typography.Text strong>{formatOrderResource(row)}</Typography.Text>
-          {row.resource?.code && (
-            <Typography.Text type="secondary" copyable={{ text: row.resource.code }} style={{ fontSize: 12 }}>
-              {compactTraceValue(row.resource.code, 20)}
-            </Typography.Text>
-          )}
+          <Typography.Text strong>{row.sku.name}</Typography.Text>
+          <Typography.Text type="secondary" copyable={{ text: row.sku.code }} style={{ fontSize: 12 }}>
+            {row.sku.code}
+          </Typography.Text>
           <Space size={6} wrap>
-            <Tag color="geekblue">{t('customer.reseller.products.mainSite')}</Tag>
+            <Tag color="blue">{row.countryCode}</Tag>
+            {row.regionCode && <Tag color="cyan">{row.regionCode}</Tag>}
           </Space>
         </Space>
       ),
     },
     {
       title: t('customer.reseller.orders.status'),
-      dataIndex: 'status',
       key: 'status',
       width: 130,
-      render: (v: string) => <Tag color={orderStatusColor(v)}>{formatOrderStatus(t, v)}</Tag>,
+      render: (_: unknown, row) => <Tag color={executionStatusColor(row.execution.status)}>{formatOrderStatus(t, row.execution.status)}</Tag>,
     },
     {
       title: t('customer.reseller.orders.spec'),
@@ -219,7 +229,7 @@ export function ResellerOrdersFeature() {
                 size="middle"
                 style={resellerCompactSelectStyle}
                 onChange={(value) => { setStatus(value); setPage(1); }}
-                options={['PENDING', 'FULFILLING', 'COMPLETED', 'FAILED', 'REFUNDED'].map((value) => ({ value, label: formatOrderStatus(t, value) }))}
+                options={['QUEUED', 'LEASED', 'RETRYING', 'COMPLETED', 'FAILED', 'NEEDS_OPERATOR'].map((value) => ({ value, label: formatOrderStatus(t, value) }))}
               />
               </div>
               <Space size={8} wrap>
@@ -248,29 +258,17 @@ export function ResellerOrdersFeature() {
   );
 }
 
-function formatOrderResource(row: ResellerOrder): string {
-  if (!row.resource) return '-';
-  return formatResourceLocationZh(row.resource).title;
-}
-
-function formatOrderType(type: string): string {
-  if (type === 'STATIC_PROXY') return '静态代理';
-  if (type === 'RESIDENTIAL_PROXY') return '住宅代理';
-  if (type === 'PROXY') return '代理服务';
-  return '代理订单';
-}
-
-function compactTraceValue(value: string, visibleChars: number): string {
-  const trimmed = value.trim();
-  if (trimmed.length <= visibleChars) return trimmed;
-  return `${trimmed.slice(0, visibleChars)}...`;
-}
-
 function formatOrderStatus(t: (key: string) => string, status: string): string {
-  if (status === 'PENDING') return t('customer.reseller.status.pending');
-  if (status === 'FULFILLING') return t('customer.reseller.status.fulfilling');
+  if (status === 'QUEUED') return t('customer.reseller.status.pending');
+  if (status === 'LEASED' || status === 'RETRYING') return t('customer.reseller.status.fulfilling');
   if (status === 'COMPLETED') return t('customer.reseller.status.completed');
-  if (status === 'FAILED') return t('customer.reseller.status.failed');
-  if (status === 'REFUNDED') return t('customer.reseller.status.refunded');
+  if (status === 'FAILED' || status === 'NEEDS_OPERATOR') return t('customer.reseller.status.failed');
   return status;
+}
+
+function executionStatusColor(status: ResellerOrder['execution']['status']): string {
+  if (status === 'COMPLETED') return 'green';
+  if (status === 'FAILED' || status === 'NEEDS_OPERATOR') return 'red';
+  if (status === 'LEASED') return 'processing';
+  return orderStatusColor(status === 'QUEUED' || status === 'RETRYING' ? 'PENDING' : status);
 }

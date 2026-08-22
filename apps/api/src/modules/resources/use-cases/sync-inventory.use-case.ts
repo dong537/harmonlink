@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ProviderRegistryService } from '../../providers/provider-registry.service';
 import { ResourcesRepository } from '../resources.repository';
 import { ProviderCode } from '../../providers/provider.types';
@@ -6,6 +6,7 @@ import { AppError } from '../../../common/errors/app-error';
 import { ErrorCode } from '../../../common/errors/error-codes';
 import { isManagedNativeProviderCode } from '../provider-saleability-policy';
 import { inventoryFreshnessTtlSeconds } from '../inventory-freshness';
+import { DedicatedLineInventoryRepository } from '../../dedicated-line-orders/dedicated-line-inventory.repository';
 
 export interface SyncInventorySummary {
   attempted: number;
@@ -29,6 +30,7 @@ export class SyncInventoryUseCase {
   constructor(
     private readonly registry: ProviderRegistryService,
     private readonly repo: ResourcesRepository,
+    @Optional() private readonly dedicatedInventory?: DedicatedLineInventoryRepository,
   ) {}
 
   async execute(siteId: string, providerCode: ProviderCode, tenantId?: string | null, accountId?: string | null): Promise<SyncInventorySummary> {
@@ -57,6 +59,15 @@ export class SyncInventoryUseCase {
 
     if (items.length === 0) {
       throw new AppError(ErrorCode.UPSTREAM_ERROR, 'inventory_empty', 502);
+    }
+    if (upstreamAccountId && this.dedicatedInventory) {
+      await this.dedicatedInventory.syncProviderSnapshot({
+        siteId,
+        providerAccountId: upstreamAccountId,
+        providerCode,
+        items,
+        capturedAt: result.syncedAt,
+      });
     }
 
     const countries = new Set<string>();

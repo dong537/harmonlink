@@ -8,13 +8,13 @@ import { ProcessDedicatedLineProjectionUseCase } from './process-dedicated-line-
   providers: [
     ConfigService,
     DedicatedLineProjectionRepository,
-    ManagedLineProjectionAdapter,
+    {
+      provide: ManagedLineProjectionAdapter,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => new ManagedLineProjectionAdapter(config),
+    },
     ProcessDedicatedLineProjectionUseCase,
   ],
-  exports: [
-    DedicatedLineProjectionRepository,
-    ManagedLineProjectionAdapter,
-    ProcessDedicatedLineProjectionUseCase,
-  ],
+  exports: [DedicatedLineProjectionRepository, ProcessDedicatedLineProjectionUseCase, ManagedLineProjectionAdapter],
 })
 export class DedicatedLineProjectionsModule {}

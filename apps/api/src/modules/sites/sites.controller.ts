@@ -4,6 +4,8 @@ import { RequirePlatformAdmin } from '../../common/auth/guards';
 import { CurrentContext } from '../../common/auth/current-context.decorator';
 import { AuthenticatedContext } from '../../common/auth/auth-context';
 import { PublicSiteContext, SitesRepository } from './sites.repository';
+import { UpdateSiteDomainDto } from './dto';
+import { UpdateSiteDomainUseCase } from './update-site-domain.use-case';
 
 async function resolvePublicContext(req: FastifyRequest, repo: SitesRepository): Promise<PublicSiteContext> {
   if (req.authContext?.siteId) {
@@ -21,7 +23,10 @@ function firstHeaderValue(value: string | string[] | undefined): string | null {
 
 @Controller('sites')
 export class SitesController {
-  constructor(private readonly repo: SitesRepository) {}
+  constructor(
+    private readonly repo: SitesRepository,
+    private readonly updateSiteDomain: UpdateSiteDomainUseCase,
+  ) {}
 
   @Get('current')
   async getCurrent(@Req() req: FastifyRequest) {
@@ -40,6 +45,15 @@ export class SitesController {
     @Body() body: Record<string, unknown>,
   ) {
     return this.repo.updateBrandConfig(ctx.siteId, body);
+  }
+
+  @Put('current/domain')
+  @RequirePlatformAdmin()
+  async updateDomain(
+    @CurrentContext() ctx: AuthenticatedContext,
+    @Body() body: UpdateSiteDomainDto,
+  ) {
+    return this.updateSiteDomain.execute(ctx, body);
   }
 
   @Put('current/maintenance')

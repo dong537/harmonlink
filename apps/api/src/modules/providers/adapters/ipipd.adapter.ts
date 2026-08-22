@@ -430,7 +430,7 @@ function operationFromUri(uri: string): string {
   return 'upstreamRequest';
 }
 
-function ipipdUrl(baseUrl: string, signedUri: string): string {
+export function ipipdUrl(baseUrl: string, signedUri: string): string {
   const parsed = new URL(baseUrl);
   const pathPrefix = parsed.pathname.replace(/\/+$/, '');
   const lowerPrefix = pathPrefix.toLowerCase();

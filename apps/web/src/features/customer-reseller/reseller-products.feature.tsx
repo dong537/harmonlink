@@ -6,21 +6,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColumnsType } from 'antd/es/table';
 import { useTranslation } from 'react-i18next';
 import { buildQuery, userApiRequest } from '../../shared/api/client';
-import { formatResourceLocationZh } from '../../shared/resource/resource-labels';
 import { ListPage } from '../../shared/ui/list-page';
 import { PageHeader } from '../../shared/ui/page-header';
 import { formatDateTime } from '../../shared/time/time';
 import { getBackendReason, resellerCompactInputStyle, resellerCompactSelectStyle, resellerHeroStyle, resellerIconStyle, resellerMetricBodyStyle, resellerMetricToneStyle, resellerSummaryStripStyle, resellerToolbarFiltersStyle, resellerToolbarStyle, resellerWorkspaceHeaderStyle } from './reseller-ui';
 
 interface ResellerProduct {
-  resourceId: string;
+  skuId: string;
   code: string;
   name: string;
-  displayName?: string | null;
-  ipType: string;
-  protocol: string;
+  description?: string | null;
   status: string;
-  stock: number | null;
+  availableInventory: number | null;
   inventoryCapturedAt: string | null;
   inventoryIsStale: boolean | null;
   enabled: boolean;
@@ -52,7 +49,7 @@ export function ResellerProductsFeature() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: (payload: { resourceId: string; enabled: boolean; unitPrice?: string; currency?: string }) =>
+    mutationFn: (payload: { skuId: string; enabled: boolean; unitPrice?: string; currency?: string }) =>
       userApiRequest('/api/customer/reseller/products', {
         method: 'POST',
         body: JSON.stringify(payload),
@@ -67,7 +64,7 @@ export function ResellerProductsFeature() {
   });
 
   const batchSaveMutation = useMutation({
-    mutationFn: (products: Array<{ resourceId: string; enabled: boolean; unitPrice?: string; currency?: string }>) =>
+    mutationFn: (products: Array<{ skuId: string; enabled: boolean; unitPrice?: string; currency?: string }>) =>
       userApiRequest('/api/customer/reseller/products', {
         method: 'POST',
         body: JSON.stringify({ products }),
@@ -84,15 +81,15 @@ export function ResellerProductsFeature() {
 
   const items = query.data?.items ?? [];
   const hasActiveFilters = Boolean(search || status);
-  const enabledCount = items.filter((item) => getDraft(item, drafts[item.resourceId]).enabled).length;
+  const enabledCount = items.filter((item) => getDraft(item, drafts[item.skuId]).enabled).length;
   const disabledCount = Math.max(items.length - enabledCount, 0);
   const missingPriceCount = items.filter((item) => {
-    const draft = getDraft(item, drafts[item.resourceId]);
+    const draft = getDraft(item, drafts[item.skuId]);
     return draft.enabled && !draft.unitPrice.trim();
   }).length;
   const staleInventoryCount = items.filter((item) => item.inventoryIsStale === true).length;
   const changedProducts = items
-    .map((item) => buildProductPayload(item, getDraft(item, drafts[item.resourceId])))
+    .map((item) => buildProductPayload(item, getDraft(item, drafts[item.skuId])))
     .filter((payload): payload is NonNullable<typeof payload> => Boolean(payload));
 
   const columns: ColumnsType<ResellerProduct> = [
@@ -101,16 +98,12 @@ export function ResellerProductsFeature() {
       key: 'resource',
       width: 320,
       render: (_value, row) => {
-        const location = formatResourceLocationZh(row);
-        const resourceTitle = location.detail
-          ? t('customer.reseller.products.locationWithDetail', { country: location.country, detail: location.detail })
-          : location.country;
         return (
           <Space direction="vertical" size={2}>
-            <Typography.Text strong>{resourceTitle}</Typography.Text>
+            <Typography.Text strong>{row.name}</Typography.Text>
+            {row.description && <Typography.Text type="secondary">{row.description}</Typography.Text>}
             <Space size={6} wrap>
-              <Tag>{formatProductIpType(t, row.ipType)}</Tag>
-              <Tag>{formatProductProtocol(t, row.protocol)}</Tag>
+              <Tag color="geekblue">{row.code}</Tag>
               <Tag color={row.status === 'ACTIVE' ? 'green' : 'default'}>{formatProductStatus(t, row.status)}</Tag>
             </Space>
           </Space>
@@ -134,7 +127,7 @@ export function ResellerProductsFeature() {
       width: 180,
       render: (_value, row) => (
         <Space direction="vertical" size={0}>
-          <Typography.Text>{row.stock === null ? t('customer.reseller.products.realtimeStock') : row.stock}</Typography.Text>
+          <Typography.Text>{row.availableInventory === null ? t('customer.reseller.products.realtimeStock') : row.availableInventory}</Typography.Text>
           {row.inventoryIsStale ? <Tag color="orange">{t('customer.reseller.products.inventoryStale')}</Tag> : null}
           {row.inventoryCapturedAt && (
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -149,11 +142,11 @@ export function ResellerProductsFeature() {
       key: 'enabled',
       width: 110,
       render: (_value, row) => {
-        const draft = getDraft(row, drafts[row.resourceId]);
+        const draft = getDraft(row, drafts[row.skuId]);
         return (
           <Switch
             checked={draft.enabled}
-            onChange={(checked) => updateDraft(row.resourceId, { enabled: checked })}
+            onChange={(checked) => updateDraft(row.skuId, { enabled: checked })}
           />
         );
       },
@@ -163,7 +156,7 @@ export function ResellerProductsFeature() {
       key: 'price',
       width: 220,
       render: (_value, row) => {
-        const draft = getDraft(row, drafts[row.resourceId]);
+        const draft = getDraft(row, drafts[row.skuId]);
         return (
           <InputNumber
             min={0}
@@ -172,7 +165,7 @@ export function ResellerProductsFeature() {
             value={draft.unitPrice ? Number(draft.unitPrice) : null}
             style={{ width: 150 }}
             addonAfter={row.currency ?? 'CNY'}
-            onChange={(value) => updateDraft(row.resourceId, { unitPrice: value === null ? '' : String(value) })}
+            onChange={(value) => updateDraft(row.skuId, { unitPrice: value === null ? '' : String(value) })}
           />
         );
       },
@@ -182,7 +175,7 @@ export function ResellerProductsFeature() {
       key: 'saleStatus',
       width: 150,
       render: (_value, row) => {
-        const draft = getDraft(row, drafts[row.resourceId]);
+        const draft = getDraft(row, drafts[row.skuId]);
         if (!draft.enabled) return <Tag>{t('customer.reseller.products.disabledOnly')}</Tag>;
         if (!draft.unitPrice.trim()) return <Tag color="orange">{t('customer.reseller.products.missingPrice')}</Tag>;
         return <Tag color="green">{t('customer.reseller.products.saleReady')}</Tag>;
@@ -194,7 +187,7 @@ export function ResellerProductsFeature() {
       fixed: 'right',
       width: 110,
       render: (_value, row) => {
-        const payload = buildProductPayload(row, getDraft(row, drafts[row.resourceId]));
+        const payload = buildProductPayload(row, getDraft(row, drafts[row.skuId]));
         return (
           <Button
             icon={<SaveOutlined />}
@@ -209,12 +202,12 @@ export function ResellerProductsFeature() {
     },
   ];
 
-  function updateDraft(resourceId: string, patch: Partial<ProductDraft>) {
-    const item = items.find((product) => product.resourceId === resourceId);
+  function updateDraft(skuId: string, patch: Partial<ProductDraft>) {
+    const item = items.find((product) => product.skuId === skuId);
     if (!item) return;
     setDrafts((current) => ({
       ...current,
-      [resourceId]: { ...getDraft(item, current[resourceId]), ...patch },
+      [skuId]: { ...getDraft(item, current[skuId]), ...patch },
     }));
   }
 
@@ -304,7 +297,7 @@ export function ResellerProductsFeature() {
           <ListPage
             query={query}
             columns={columns}
-            rowKey="resourceId"
+            rowKey="skuId"
             emptyText={t('customer.reseller.products.empty')}
             errorDescription={(error) => getBackendReason(error, t)}
             toolbar={(
@@ -373,31 +366,17 @@ function getDraft(row: ResellerProduct, draft?: ProductDraft): ProductDraft {
   };
 }
 
-function buildProductPayload(row: ResellerProduct, draft: ProductDraft): { resourceId: string; enabled: boolean; unitPrice?: string; currency?: string } | null {
+function buildProductPayload(row: ResellerProduct, draft: ProductDraft): { skuId: string; enabled: boolean; unitPrice?: string; currency?: string } | null {
   const normalizedPrice = draft.unitPrice.trim();
   if (draft.enabled === row.enabled && normalizedPrice === (row.unitPrice ?? '')) return null;
-  if (!draft.enabled) return { resourceId: row.resourceId, enabled: false };
+  if (!draft.enabled) return { skuId: row.skuId, enabled: false };
   if (!normalizedPrice) return null;
   return {
-    resourceId: row.resourceId,
+    skuId: row.skuId,
     enabled: true,
     unitPrice: normalizedPrice,
     currency: row.currency ?? 'CNY',
   };
-}
-
-function formatProductIpType(t: (key: string) => string, value?: string | null): string {
-  if (value === 'NATIVE') return t('customer.reseller.products.ipType.native');
-  if (value === 'BROADCAST') return t('customer.reseller.products.ipType.broadcast');
-  if (value === 'BOTH') return t('customer.reseller.products.ipType.both');
-  return t('customer.reseller.products.unknown');
-}
-
-function formatProductProtocol(t: (key: string) => string, value?: string | null): string {
-  if (value === 'HTTP') return t('customer.reseller.products.protocol.http');
-  if (value === 'SOCKS5') return t('customer.reseller.products.protocol.socks5');
-  if (value === 'BOTH') return t('customer.reseller.products.protocol.both');
-  return t('customer.reseller.products.unknown');
 }
 
 function formatProductStatus(t: (key: string) => string, value?: string | null): string {

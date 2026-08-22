@@ -4734,6 +4734,12 @@ body {
   white-space: nowrap;
 }
 
+.ipx-api-key-scope-caption {
+  display: block;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .ipx-api-key-secret-box {
   width: 100%;
   min-width: 0;

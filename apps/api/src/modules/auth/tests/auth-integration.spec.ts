@@ -194,12 +194,18 @@ describe('auth + RBAC integration', () => {
     const createRes = await request
       .post(TENANTS_PATH)
       .set('Authorization', `Bearer ${token}`)
-      .send({ code: 'audited-tenant', name: 'Audited Tenant' });
+      .send({
+        code: 'audited-tenant',
+        name: 'Audited Tenant',
+        adminEmail: 'audited-tenant-admin@example.com',
+        adminPassword: 'AuditedTenant123',
+      });
     expect([200, 201]).toContain(createRes.status);
 
     const logs = await prisma.audit_logs.findMany({ where: { actorId: adminId } });
     expect(logs.length).toBeGreaterThanOrEqual(1);
     expect(logs.some((l) => l.actorType === 'ADMIN_USER' && l.action === 'auth.login')).toBe(true);
+    expect(logs.some((l) => l.actorType === 'ADMIN_USER' && l.action === 'tenant.create')).toBe(true);
   });
 
   it('missing token cannot access protected endpoint', async () => {

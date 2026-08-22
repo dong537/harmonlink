@@ -4,7 +4,6 @@ import { MaintenanceMiddleware } from './common/maintenance/maintenance.middlewa
 import { HealthController } from './modules/health/health.controller';
 import { ConfigService } from './common/config/config.service';
 import { LoggerService } from './common/logging/logger.service';
-import { PrismaModule } from './common/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ApiKeysModule } from './modules/api-keys/api-keys.module';
 import { WalletModule } from './modules/wallet/wallet.module';
@@ -30,12 +29,11 @@ import { DedicatedLineOrdersModule } from './modules/dedicated-line-orders/dedic
 import { DedicatedLinesModule } from './modules/dedicated-lines/dedicated-lines.module';
 import { DedicatedLineMigrationsModule } from './modules/dedicated-line-migrations/dedicated-line-migrations.module';
 import { DedicatedLineHealthModule } from './modules/dedicated-line-health/dedicated-line-health.module';
-import { DedicatedLineProjectionsModule } from './modules/dedicated-line-projections/dedicated-line-projections.module';
 import { ProductionReadinessModule } from './modules/production-readiness/production-readiness.module';
 import { ApiV1CompatModule } from './modules/api-v1-compat/api-v1-compat.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, ApiKeysModule, WalletModule, PaymentsModule, ProvidersModule, ResourcesModule, PricingModule, OrdersModule, ProxiesModule, OpenApiModule, TenantsModule, SitesModule, UpstreamAccountsModule, UsersModule, AuditModule, TicketsModule, NotificationsModule, ProxyCheckModule, UpstreamRequestLogsModule, CustomerResellerModule, CatalogModule, DedicatedLineOrdersModule, DedicatedLinesModule, DedicatedLineMigrationsModule, DedicatedLineHealthModule, DedicatedLineProjectionsModule, ProductionReadinessModule, ApiV1CompatModule],
+  imports: [AuthModule, ApiKeysModule, WalletModule, PaymentsModule, ProvidersModule, ResourcesModule, PricingModule, OrdersModule, ProxiesModule, OpenApiModule, TenantsModule, SitesModule, UpstreamAccountsModule, UsersModule, AuditModule, TicketsModule, NotificationsModule, ProxyCheckModule, UpstreamRequestLogsModule, CustomerResellerModule, CatalogModule, DedicatedLineOrdersModule, DedicatedLinesModule, DedicatedLineMigrationsModule, DedicatedLineHealthModule, ProductionReadinessModule, ApiV1CompatModule],
   controllers: [HealthController],
   providers: [ConfigService, LoggerService],
   exports: [ConfigService, LoggerService],

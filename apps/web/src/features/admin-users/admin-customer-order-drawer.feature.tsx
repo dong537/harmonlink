@@ -66,7 +66,7 @@ interface AdminCustomerOrderFormValues {
 }
 
 type AdminCreateStaticProxyOrderDto = components['schemas']['AdminCreateStaticProxyOrderDto'];
-type CreateStaticProxyOrderResultDto = components['schemas']['CreateStaticProxyOrderResultDto'];
+type CreateStaticProxyOrderResultDto = Pick<components['schemas']['AdminOrderOperationResultDto'], 'orderId' | 'status'>;
 
 export const ADMIN_CUSTOMER_ORDER_DURATIONS = [30, 60, 90];
 const ASSISTED_ORDER_RESOURCE_PAGE_SIZE = 20;

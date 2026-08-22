@@ -1,53 +1,53 @@
 import { Controller, Post, Get, Body, Param, Query } from '@nestjs/common';
-import { ApiBody, ApiCreatedResponse } from '@nestjs/swagger';
+import { ApiBody, ApiCreatedResponse, ApiGoneResponse } from '@nestjs/swagger';
 import { OrderStatus } from '@ipeasy/db';
 import { RequireAuth, RequireUser } from '../../common/auth/guards';
 import { CurrentContext } from '../../common/auth/current-context.decorator';
 import { AuthenticatedContext } from '../../common/auth/auth-context';
 import { PageQueryDto, PageResult } from '../../common/pagination/pagination.dto';
-import { CreateStaticProxyOrderUseCase, CreateStaticProxyOrderInput } from './use-cases/create-static-proxy-order.use-case';
 import { AdminOrderOperationsUseCase } from './use-cases/admin-order-operations.use-case';
 import {
   AdminCreateStaticProxyOrderDto,
   AdminOrderOperationDto,
   AdminOrderOperationResultDto,
-  CreateStaticProxyOrderResultDto,
+  CreateStaticProxyOrderDto,
   RequiredAdminOrderOperationDto,
 } from './dto';
 import { OrdersRepository } from './orders.repository';
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { requireTenantId } from '../wallet/access';
+import { assertStaticProxyPurchaseDisabled } from './static-purchase-disabled';
 
 type OrderListQuery = PageQueryDto & { tenantId?: string; userId?: string; status?: OrderStatus };
 
 @Controller('orders')
 export class OrdersController {
   constructor(
-    private readonly createOrder: CreateStaticProxyOrderUseCase,
     private readonly adminOrderOps: AdminOrderOperationsUseCase,
     private readonly ordersRepo: OrdersRepository,
   ) {}
 
   @Post('static-proxy')
   @RequireUser()
+  @ApiGoneResponse({ description: 'Static proxy purchase is disabled' })
   async createStaticProxy(
-    @CurrentContext() ctx: AuthenticatedContext,
-    @Body() body: CreateStaticProxyOrderInput,
+    @CurrentContext() _ctx: AuthenticatedContext,
+    @Body() _body: CreateStaticProxyOrderDto,
   ) {
-    return this.createOrder.execute(ctx, body);
+    assertStaticProxyPurchaseDisabled();
   }
 
   @Post('users/:userId/static-proxy')
   @RequireAuth()
   @ApiBody({ type: AdminCreateStaticProxyOrderDto })
-  @ApiCreatedResponse({ type: CreateStaticProxyOrderResultDto })
+  @ApiGoneResponse({ description: 'Static proxy purchase is disabled' })
   async createStaticProxyForUser(
-    @CurrentContext() ctx: AuthenticatedContext,
-    @Param('userId') userId: string,
-    @Body() body: AdminCreateStaticProxyOrderDto,
+    @CurrentContext() _ctx: AuthenticatedContext,
+    @Param('userId') _userId: string,
+    @Body() _body: AdminCreateStaticProxyOrderDto,
   ) {
-    return this.createOrder.executeForAdmin(ctx, userId, body);
+    assertStaticProxyPurchaseDisabled();
   }
 
   @Get()

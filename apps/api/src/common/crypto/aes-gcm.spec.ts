@@ -6,7 +6,10 @@ const KEY = randomBytes(32).toString('hex');
 
 describe('AES-256-GCM credential crypto', () => {
   it('round-trips a credential payload', () => {
-    const plaintext = JSON.stringify({ apikey: 'yR_7WPGbMxp', zone: '4sd72p1bvlha' });
+    const plaintext = JSON.stringify({
+      apikey: 'synthetic-api-key-for-aes-roundtrip',
+      zone: 'synthetic-zone',
+    });
     const encrypted = encryptAesGcm(plaintext, KEY);
     expect(decryptAesGcm(encrypted, KEY)).toBe(plaintext);
   });

@@ -13,7 +13,7 @@ import {
   TestRequest,
 } from '../../../test-utils/integration-setup';
 
-const ENCRYPTION_KEY = process.env['APP_ENCRYPTION_KEY'] ?? 'integration-test-encryption-key-32bytes';
+const ENCRYPTION_KEY = process.env['APP_ENCRYPTION_KEY'] ?? '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
 let app: NestFastifyApplication;
 let request: TestRequest;
@@ -84,10 +84,10 @@ describe('proxy-check integration', () => {
       tenantId,
       userId,
       encryptionKey: ENCRYPTION_KEY,
-      // RFC5737 TEST-NET-3 address: never routes, so the probe fails as a normal
-      // business result (reachable=false) rather than throwing a 500.
-      ip: '203.0.113.10',
-      port: 8080,
+      // A closed loopback port fails immediately and does not depend on the CI
+      // runner's external routing or firewall timeout behavior.
+      ip: '127.0.0.1',
+      port: 1,
       username: 'secret-user',
       password: 'secret-pass',
     });
@@ -101,12 +101,15 @@ describe('proxy-check integration', () => {
     expect(res.status).toBe(200);
     expect(res.body.code).toBe(0);
     expect(res.body.data.reachable).toBe(false);
-    expect(res.body.data.error).toBeDefined();
+    expect(res.body.data.error).toEqual({
+      code: 'PROXY_UNREACHABLE',
+      reasonKey: 'proxy_unreachable',
+    });
     // never leak the proxy credentials/connection info
     const serialized = JSON.stringify(res.body.data);
     expect(serialized).not.toContain('secret-pass');
     expect(serialized).not.toContain('secret-user');
-    expect(serialized).not.toContain('203.0.113.10');
+    expect(serialized).not.toContain('127.0.0.1');
 
     const audit = await prisma.audit_logs.findFirst({
       where: { action: 'proxy.check', targetId: proxyId },

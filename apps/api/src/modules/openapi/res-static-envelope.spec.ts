@@ -22,6 +22,12 @@ class ResStaticProbeController {
   inventory(): never {
     throw new AppError(ErrorCode.UPSTREAM_ERROR, 'inventory_stale', 422);
   }
+
+  @Post('buy')
+  @HttpCode(200)
+  buy(): never {
+    throw new AppError(ErrorCode.PRODUCT_DISABLED, 'static_proxy_purchase_disabled', 410);
+  }
 }
 
 @Controller('orders')
@@ -108,5 +114,16 @@ describe('res_static envelope compatibility', () => {
 
     expect(res.status).toBe(422);
     expect(res.body).toEqual({ code: 'UPSTREAM_ERROR', msg: 'inventory_stale', data: null });
+  });
+
+  it('keeps the disabled static purchase error stable for OpenAPI clients', async () => {
+    const res = await request.post('/res_static/buy').send({});
+
+    expect(res.status).toBe(410);
+    expect(res.body).toEqual({
+      code: 'PRODUCT_DISABLED',
+      msg: 'static_proxy_purchase_disabled',
+      data: null,
+    });
   });
 });

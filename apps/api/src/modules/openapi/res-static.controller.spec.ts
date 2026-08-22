@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { randomBytes } from 'node:crypto';
 import { ConfigService } from '../../common/config/config.service';
 import { AuthenticatedContext } from '../../common/auth/auth-context';
 import { encryptAesGcm } from '../../common/crypto/aes-gcm';
@@ -8,7 +9,7 @@ import { ProxiesRepository, ProxyInstance } from '../proxies/proxies.repository'
 import { ProxyAuditService } from '../proxies/proxy-audit.service';
 import { ResStaticController } from './res-static.controller';
 
-const ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+const ENCRYPTION_KEY = randomBytes(32).toString('hex');
 
 function createController() {
   const repo = {
@@ -25,7 +26,6 @@ function createController() {
     repo,
     audit,
     controller: new ResStaticController(
-      {} as never,
       {} as never,
       {} as never,
       {} as never,

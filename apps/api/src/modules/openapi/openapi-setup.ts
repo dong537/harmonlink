@@ -1,6 +1,11 @@
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 
+export type OpenApiExposureOptions = {
+  nodeEnv: 'development' | 'test' | 'production';
+  exposureEnabled: boolean;
+};
+
 export function setupSwagger(app: NestFastifyApplication): ReturnType<typeof SwaggerModule.createDocument> {
   const config = new DocumentBuilder()
     .setTitle('IPEasy Platform API')
@@ -14,4 +19,14 @@ export function setupSwagger(app: NestFastifyApplication): ReturnType<typeof Swa
     reply.send(document);
   });
   return document;
+}
+
+export function setupSwaggerForEnvironment(
+  app: NestFastifyApplication,
+  options: OpenApiExposureOptions,
+): ReturnType<typeof SwaggerModule.createDocument> | undefined {
+  if (options.nodeEnv === 'production' && !options.exposureEnabled) {
+    return undefined;
+  }
+  return setupSwagger(app);
 }

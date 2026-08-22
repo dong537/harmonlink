@@ -1,9 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import supertest from 'supertest';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
-import Decimal from 'decimal.js';
-import { randomUUID } from 'crypto';
-import { prisma } from '@ipeasy/db';
 import {
   cleanDatabase,
   createTestApp,
@@ -49,10 +46,11 @@ beforeEach(async () => {
 });
 
 describe('predeploy smoke', () => {
-  it('covers health, readiness, OpenAPI, login, assisted order, wallet debit, order list, and audit log', async () => {
+  it('covers health, readiness, OpenAPI, login, and the disabled legacy order boundary', async () => {
     const health = await request.get('/health');
     expect(health.status).toBe(200);
     expect(health.body.status).toBe('ok');
+    expect(health.body.releaseGitSha).toMatch(/^[0-9a-f]{40}$/);
 
     const ready = await request.get('/ready');
     expect(ready.status).toBe(200);
@@ -64,17 +62,7 @@ describe('predeploy smoke', () => {
     expect(openApi.body.openapi).toBe('3.0.0');
     expect(openApi.body.paths['/api/orders/users/{userId}/static-proxy']).toBeTruthy();
 
-    const resourceId = await seedSaleableResource({
-      code: 'SMOKE',
-      unitPrice: '18',
-      durationDays: 30,
-      stock: 20,
-    });
-    await prisma.wallets.update({
-      where: { userId },
-      data: { available: new Decimal('100') },
-    });
-    const adminId = await seedAdminUser(siteId, null, 'PLATFORM_ADMIN', {
+    await seedAdminUser(siteId, null, 'PLATFORM_ADMIN', {
       email: ADMIN_EMAIL,
       password: PASSWORD,
     });
@@ -85,24 +73,25 @@ describe('predeploy smoke', () => {
       .post(`/api/orders/users/${userId}/static-proxy`)
       .set('Authorization', `Bearer ${token}`)
       .send({
-        resourceId,
-        quantity: 2,
+        resourceId: 'legacy-resource-not-used',
+        quantity: 1,
         durationDays: 30,
         currency: CURRENCY,
-        idempotencyKey: `predeploy-smoke-${randomUUID()}`,
-        businessType: 'smoke',
-        reason: 'predeploy assisted order smoke',
+        idempotencyKey: 'predeploy-smoke-disabled-static',
+        reason: 'predeploy legacy route must remain disabled',
       });
 
-    expect([200, 201]).toContain(order.status);
-    const orderId = order.body.data.orderId as string;
-    expect(order.body.data.status).toBe('PENDING');
+    expect(order.status).toBe(410);
+    expect(order.body).toMatchObject({
+      code: 'PRODUCT_DISABLED',
+      data: { reasonKey: 'static_proxy_purchase_disabled' },
+    });
 
     const wallet = await request
       .get(`/api/wallet/${userId}`)
       .set('Authorization', `Bearer ${token}`);
     expect(wallet.status).toBe(200);
-    expect(wallet.body.data.available).toBe('64');
+    expect(wallet.body.data.available).toBe('0');
     expect(wallet.body.data.currency).toBe(CURRENCY);
 
     const orders = await request
@@ -110,78 +99,6 @@ describe('predeploy smoke', () => {
       .query({ userId, page: 1, pageSize: 10 })
       .set('Authorization', `Bearer ${token}`);
     expect(orders.status).toBe(200);
-    expect(orders.body.data.total).toBe(1);
-    expect(orders.body.data.items[0]).toMatchObject({
-      id: orderId,
-      userId,
-      status: 'PENDING',
-      totalPrice: '36',
-      currency: CURRENCY,
-    });
-
-    const audit = await request
-      .get('/api/audit')
-      .query({ action: 'order.admin_create', actorType: 'ADMIN_USER' })
-      .set('Authorization', `Bearer ${token}`);
-    expect(audit.status).toBe(200);
-    expect(audit.body.data.items[0]).toMatchObject({
-      action: 'order.admin_create',
-      actorType: 'ADMIN_USER',
-      actorId: adminId,
-      targetType: 'orders',
-      targetId: orderId,
-    });
+    expect(orders.body.data.total).toBe(0);
   });
 });
-
-async function seedSaleableResource(opts: {
-  code: string;
-  unitPrice: string;
-  durationDays: number;
-  stock: number;
-}): Promise<string> {
-  const template = await prisma.price_templates.create({
-    data: {
-      siteId,
-      name: `Smoke Default ${randomUUID()}`,
-      isDefault: true,
-    },
-  });
-  const resource = await prisma.platform_resources.create({
-    data: {
-      siteId,
-      providerCode: 'IPIPD',
-      type: 'COUNTRY',
-      code: `${opts.code}-${randomUUID()}`,
-      name: opts.code,
-      ipType: 'NATIVE',
-      protocol: 'BOTH',
-      status: 'ACTIVE',
-      isSaleable: true,
-      isVisible: true,
-    },
-  });
-  await prisma.inventory_snapshots.create({
-    data: {
-      siteId,
-      resourceId: resource.id,
-      providerCode: 'IPIPD',
-      stock: opts.stock,
-      capturedAt: new Date(),
-      freshnessTtlSeconds: 3600,
-      isStale: false,
-    },
-  });
-  await prisma.price_rules.create({
-    data: {
-      siteId,
-      templateId: template.id,
-      resourceId: resource.id,
-      durationDays: opts.durationDays,
-      unitPrice: new Decimal(opts.unitPrice),
-      currency: CURRENCY,
-      minQty: 1,
-    },
-  });
-  return resource.id;
-}

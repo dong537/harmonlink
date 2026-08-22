@@ -26,7 +26,7 @@ type CreateTemplateBody = {
 };
 
 type RuleBody = {
-  resourceId: string;
+  skuId: string;
   durationDays: number;
   unitPrice: string;
   currency: string;
@@ -36,7 +36,7 @@ type RuleBody = {
 type RulesBody = RuleBody | { rules: RuleBody[] };
 
 type ProductRuleBody = {
-  resourceId: string;
+  skuId: string;
   enabled: boolean;
   unitPrice?: string;
   currency?: string;
@@ -178,20 +178,20 @@ export class CustomerResellerController {
   }
 }
 
-function normalizeProductsBody(body: ProductsBody): Array<{ resourceId: string; enabled: boolean; unitPrice?: string; currency?: string }> {
+function normalizeProductsBody(body: ProductsBody): Array<{ skuId: string; enabled: boolean; unitPrice?: string; currency?: string }> {
   const products = 'products' in body ? body.products : [body];
   if (!Array.isArray(products) || products.length === 0) {
     throw new AppError(ErrorCode.VALIDATION_ERROR, 'products_required', 400);
   }
   return products.map((product) => {
-    if (!product.resourceId) throw new AppError(ErrorCode.VALIDATION_ERROR, 'resource_id_required', 400);
+    if (!product.skuId) throw new AppError(ErrorCode.VALIDATION_ERROR, 'sku_id_required', 400);
     if (typeof product.enabled !== 'boolean') throw new AppError(ErrorCode.VALIDATION_ERROR, 'enabled_invalid', 400);
     if (product.enabled && !isNonNegativeDecimalString(product.unitPrice)) {
       throw new AppError(ErrorCode.VALIDATION_ERROR, 'unit_price_invalid', 400);
     }
     if (product.enabled && !product.currency) throw new AppError(ErrorCode.VALIDATION_ERROR, 'currency_required', 400);
     return {
-      resourceId: product.resourceId,
+      skuId: product.skuId,
       enabled: product.enabled,
       unitPrice: product.unitPrice === undefined ? undefined : String(product.unitPrice),
       currency: product.currency,
@@ -205,7 +205,7 @@ function normalizeRulesBody(body: RulesBody): RuleBody[] {
     throw new AppError(ErrorCode.VALIDATION_ERROR, 'price_rules_required', 400);
   }
   return rules.map((rule) => {
-    if (!rule.resourceId) throw new AppError(ErrorCode.VALIDATION_ERROR, 'resource_id_required', 400);
+    if (!rule.skuId) throw new AppError(ErrorCode.VALIDATION_ERROR, 'sku_id_required', 400);
     const durationDays = Number(rule.durationDays);
     if (!Number.isInteger(durationDays) || durationDays < 1) throw new AppError(ErrorCode.VALIDATION_ERROR, 'duration_days_invalid', 400);
     if (!isNonNegativeDecimalString(rule.unitPrice)) throw new AppError(ErrorCode.VALIDATION_ERROR, 'unit_price_invalid', 400);
@@ -213,7 +213,7 @@ function normalizeRulesBody(body: RulesBody): RuleBody[] {
     const minQty = rule.minQty === undefined ? undefined : Number(rule.minQty);
     if (minQty !== undefined && (!Number.isInteger(minQty) || minQty < 1)) throw new AppError(ErrorCode.VALIDATION_ERROR, 'min_qty_invalid', 400);
     return {
-      resourceId: rule.resourceId,
+      skuId: rule.skuId,
       durationDays,
       unitPrice: String(rule.unitPrice),
       currency: rule.currency,

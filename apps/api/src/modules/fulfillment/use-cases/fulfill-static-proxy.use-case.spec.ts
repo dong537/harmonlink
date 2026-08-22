@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { randomBytes } from 'node:crypto';
 import { prisma } from '@ipeasy/db';
 import Decimal from 'decimal.js';
 import { ConfigService } from '../../../common/config/config.service';
@@ -31,7 +32,7 @@ vi.mock('@ipeasy/db', () => ({
   },
 }));
 
-const ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+const ENCRYPTION_KEY = randomBytes(32).toString('hex');
 
 describe('FulfillStaticProxyUseCase', () => {
   beforeEach(() => {

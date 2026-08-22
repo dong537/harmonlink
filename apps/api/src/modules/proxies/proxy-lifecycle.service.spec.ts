@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { randomBytes } from 'node:crypto';
 import { prisma } from '@ipeasy/db';
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
@@ -23,7 +24,7 @@ vi.mock('@ipeasy/db', () => ({
   },
 }));
 
-const ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+const ENCRYPTION_KEY = randomBytes(32).toString('hex');
 
 beforeEach(() => {
   vi.clearAllMocks();

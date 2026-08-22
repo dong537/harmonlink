@@ -4,7 +4,6 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ResellerPricingFeature } from '../reseller-pricing.feature';
 import { userApiRequest } from '../../../shared/api/client';
-import { formatResourceLocationZh } from '../../../shared/resource/resource-labels';
 
 const navigateMock = vi.fn();
 
@@ -37,7 +36,7 @@ function renderWithQueryClient(ui: React.ReactElement) {
 }
 
 describe('ResellerPricingFeature', () => {
-  it('uses the enabled reseller product pool for rule configuration and saves through the real reseller template endpoint', async () => {
+  it('uses the enabled dedicated-line SKU pool for rule configuration and saves through the real reseller template endpoint', async () => {
     vi.mocked(userApiRequest)
       .mockResolvedValueOnce({
         page: 1,
@@ -49,18 +48,17 @@ describe('ResellerPricingFeature', () => {
             name: 'Default reseller pricing',
             description: '30 day default',
             isDefault: true,
-            price_rules: [],
+            sku_price_rules: [],
           },
         ],
       })
       .mockResolvedValueOnce({
         items: [
           {
-            resourceId: 'res-us-ny',
-            code: 'US:NY-RECOMMENDED',
-            name: 'US-New York Recommended',
-            displayName: 'US-New York Recommended',
-            providerCode: 'IPIPD',
+            skuId: 'sku-sv',
+            code: 'SV',
+            name: 'Short Video Dedicated Line',
+            description: 'Short-video routing contract',
             unitPrice: '28',
             currency: 'CNY',
             enabled: true,
@@ -83,16 +81,11 @@ describe('ResellerPricingFeature', () => {
       expect(userApiRequest).toHaveBeenCalledWith('/api/customer/reseller/products?page=1&pageSize=20&status=ENABLED');
     });
 
-    const resourceSelector = document.querySelector('#resourceIds');
-    expect(resourceSelector).toBeTruthy();
-    fireEvent.mouseDown(resourceSelector as Element);
-    const localizedResource = formatResourceLocationZh({
-      code: 'US:NY-RECOMMENDED',
-      name: 'US-New York Recommended',
-      displayName: 'US-New York Recommended',
-    }).title;
-    fireEvent.click(await screen.findByText(`${localizedResource} / 28 CNY`));
-    expect(screen.queryByText(/US-New York Recommended/)).not.toBeInTheDocument();
+    const skuSelector = document.querySelector('#skuIds');
+    expect(skuSelector).toBeTruthy();
+    fireEvent.mouseDown(skuSelector as Element);
+    fireEvent.click(await screen.findByText('SV / Short Video Dedicated Line / 28 CNY'));
+    expect(screen.getAllByText(/Short Video Dedicated Line/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/IPIPD/)).not.toBeInTheDocument();
     fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '35' } });
     fireEvent.click(screen.getByRole('button', { name: 'submit' }));
@@ -103,7 +96,7 @@ describe('ResellerPricingFeature', () => {
         body: JSON.stringify({
           rules: [
             {
-              resourceId: 'res-us-ny',
+              skuId: 'sku-sv',
               durationDays: 30,
               unitPrice: '35',
               currency: 'CNY',

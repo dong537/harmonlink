@@ -1,4 +1,4 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { RequireAuth } from '../../common/auth/guards';
 import { CurrentContext } from '../../common/auth/current-context.decorator';
 import { AuthenticatedContext } from '../../common/auth/auth-context';
@@ -10,6 +10,7 @@ export class ProxyCheckController {
   constructor(private readonly checkUseCase: CheckProxyUseCase) {}
 
   @Post()
+  @HttpCode(HttpStatus.OK)
   @RequireAuth()
   async check(
     @CurrentContext() ctx: AuthenticatedContext,

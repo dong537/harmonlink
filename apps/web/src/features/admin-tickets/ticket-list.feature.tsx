@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
 import type { ColumnsType } from 'antd/es/table';
-import { apiRequest, buildQuery } from '../../shared/api/client';
+import { apiRequest, buildQuery, ApiError } from '../../shared/api/client';
 import { formatDateTime } from '../../shared/time/time';
 import { ListPage } from '../../shared/ui/list-page';
 import { PageHeader } from '../../shared/ui/page-header';
@@ -137,7 +137,7 @@ export function AdminTicketListFeature() {
         toolbar={toolbar}
         rowKey="id"
         emptyText={t('adminTickets.empty')}
-        errorDescription={getReasonKey}
+        errorDescription={(error) => error instanceof ApiError ? error.reasonKey : t('error')}
         pagination={{
           page,
           pageSize,
@@ -147,9 +147,4 @@ export function AdminTicketListFeature() {
       />
     </>
   );
-}
-
-function getReasonKey(error: unknown): string {
-  const apiError = error as { reasonKey?: string } | undefined;
-  return apiError?.reasonKey || (error instanceof Error ? error.message : String(error));
 }

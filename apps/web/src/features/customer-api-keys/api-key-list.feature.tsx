@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ApiOutlined, CheckCircleOutlined, ClockCircleOutlined, CopyOutlined, KeyOutlined, LockOutlined, ReloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Col, Form, Input, Modal, Popconfirm, Row, Skeleton, Space, Statistic, Tag, Typography, message } from 'antd';
+import { Alert, Button, Card, Col, Form, Input, Modal, Popconfirm, Row, Segmented, Skeleton, Space, Statistic, Tag, Typography, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { ColumnsType } from 'antd/es/table';
@@ -27,8 +27,11 @@ interface CreateApiKeyResult extends ApiKeyListItem {
   plainKey?: string;
 }
 
+type ApiKeyPurpose = 'RESIDENTIAL' | 'DEDICATED';
+
 interface CreateApiKeyFormValues {
   name: string;
+  purpose: ApiKeyPurpose;
 }
 
 export function buildApiKeyListPath(page: number, pageSize: number): string {
@@ -38,11 +41,12 @@ export function buildApiKeyListPath(page: number, pageSize: number): string {
 export function buildCreateApiKeyBody(input: {
   tenantId: string;
   name: string;
+  purpose?: ApiKeyPurpose;
 }) {
   return {
     tenantId: input.tenantId,
     name: input.name.trim(),
-    scopes: ['res_static:*'],
+    scopes: [input.purpose === 'RESIDENTIAL' ? 'res_static:*' : 'dedicated:*'],
     ipWhitelist: [],
   };
 }
@@ -72,6 +76,7 @@ export function CustomerApiKeyListFeature() {
   const [plainKey, setPlainKey] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [form] = Form.useForm<CreateApiKeyFormValues>();
+  const keyPurpose = Form.useWatch('purpose', form) ?? 'DEDICATED';
 
   const currentQuery = useCurrentCustomer();
   const tenantId = currentQuery.data?.tenantId ?? '';
@@ -130,7 +135,7 @@ export function CustomerApiKeyListFeature() {
       }
       return userApiRequest<CreateApiKeyResult>('/api/api-keys', {
         method: 'POST',
-        body: JSON.stringify(buildCreateApiKeyBody({ tenantId, name: values.name })),
+        body: JSON.stringify(buildCreateApiKeyBody({ tenantId, name: values.name, purpose: values.purpose })),
       });
     },
     onSuccess: (result) => {
@@ -197,6 +202,9 @@ export function CustomerApiKeyListFeature() {
       width: 260,
       render: (scopes: string[]) => (
         <Space direction="vertical" size={4}>
+          <Typography.Text type="secondary" className="ipx-api-key-scope-caption">
+            {t('customer.apiKeys.scopeSummaryLabel')}
+          </Typography.Text>
           <Space size={[4, 4]} wrap>
           {scopes.length > 0
             ? scopes.map((scope) => (
@@ -512,13 +520,29 @@ export function CustomerApiKeyListFeature() {
             style={{ marginBottom: 16 }}
           />
         )}
-        <Form form={form} layout="vertical" onFinish={(values) => createMutation.mutate(values)}>
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{ purpose: 'DEDICATED' }}
+          onFinish={(values) => createMutation.mutate(values)}
+        >
           <Alert
             type="success"
             showIcon
-            message={t('customer.apiKeys.form.permissionPreview')}
+            message={t(keyPurpose === 'DEDICATED'
+              ? 'customer.apiKeys.form.dedicatedPermissionPreview'
+              : 'customer.apiKeys.form.permissionPreview')}
             style={{ marginBottom: 16 }}
           />
+          <Form.Item name="purpose" label={t('customer.apiKeys.form.purpose')} rules={[{ required: true }]}>
+            <Segmented
+              block
+              options={[
+                { value: 'DEDICATED', label: t('customer.apiKeys.form.purposeDedicated') },
+                { value: 'RESIDENTIAL', label: t('customer.apiKeys.form.purposeResidential') },
+              ]}
+            />
+          </Form.Item>
           <Form.Item
             name="name"
             label={t('customer.apiKeys.form.name')}
@@ -544,11 +568,9 @@ function formatApiKeyReason(
 }
 
 function formatApiScope(t: (key: string, options?: Record<string, unknown>) => string, scope: string): string {
-  const key = `customer.apiKeys.scopeValue.${scope}`;
-  const translated = t(key);
-  if (translated !== key) return translated;
   if (scope === 'res_static:*') return t('customer.apiKeys.defaultScopeLabel');
-  return t('customer.apiKeys.scopeValue.generic', { defaultValue: t('customer.apiKeys.defaultScopeLabel') });
+  if (scope === 'dedicated:*') return t('customer.apiKeys.dedicatedScopeLabel');
+  return scope;
 }
 
 function PlainKeyModal({ plainKey, onClose }: { plainKey: string; onClose: () => void }) {

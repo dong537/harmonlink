@@ -59,7 +59,7 @@ describe('AdminLoginFeature', () => {
     fireEvent.change(passwordInput, { target: { value: 'pw-12345' } });
     fireEvent.click(screen.getByRole('button'));
 
-    await waitFor(() => expect(screen.getByText('network_error')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('login.networkError')).toBeTruthy());
   });
 
   it('非邮箱用户名（如 admin）也能提交登录', async () => {

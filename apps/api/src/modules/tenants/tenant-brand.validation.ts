@@ -1,5 +1,6 @@
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { normalizeDnsHostname } from '../../common/validation/dns-hostname';
 import type { TenantBrandConfig } from './tenants.repository';
 
 export function assertBrandConfig(value: unknown): TenantBrandConfig {
@@ -78,21 +79,7 @@ function assertPrimaryColor(value: string): string {
 }
 
 function assertCustomDomain(value: string): string {
-  const domain = value.toLowerCase();
-  if (domain.includes('://') || domain.includes('/') || domain.includes(':') || domain.includes('@')) {
-    throw new AppError(ErrorCode.VALIDATION_ERROR, 'brand_custom_domain_invalid', 400);
-  }
-  const labels = domain.split('.');
-  if (labels.length < 2 || labels.some((label) => !isDomainLabel(label))) {
-    throw new AppError(ErrorCode.VALIDATION_ERROR, 'brand_custom_domain_invalid', 400);
-  }
-  return domain;
-}
-
-function isDomainLabel(label: string): boolean {
-  return label.length >= 1 &&
-    label.length <= 63 &&
-    /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label);
+  return normalizeDnsHostname(value, 'brand_custom_domain_invalid');
 }
 
 function assertSupportEmail(value: string): string {

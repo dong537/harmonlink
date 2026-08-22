@@ -7,7 +7,7 @@ export function normalizeProviderCredential(
   value: unknown,
   options: { partial: boolean },
 ): Record<string, string> {
-  const credential = trimCredentialObject(value, options);
+  const credential = normalizeCredentialKeyAliases(providerCode, trimCredentialObject(value, options));
   const fields = credentialFieldsForProvider(providerCode);
   const recognized = [...fields.required, ...fields.optional].filter((field) => credential[field] !== undefined);
   if (options.partial) {
@@ -23,6 +23,13 @@ export function normalizeProviderCredential(
     }
   }
   return pickCredential(credential, [...fields.required, ...fields.optional].filter((field) => credential[field] !== undefined));
+}
+
+function normalizeCredentialKeyAliases(providerCode: ProviderCode, credential: Record<string, string>): Record<string, string> {
+  if ((providerCode === 'NINE_EIGHT_FIVE' || providerCode === 'PR') && !credential['apikey'] && credential['apiKey']) {
+    return { ...credential, apikey: credential['apiKey'] };
+  }
+  return credential;
 }
 
 export function trimCredentialObject(value: unknown, options: { partial: boolean }): Record<string, string> {

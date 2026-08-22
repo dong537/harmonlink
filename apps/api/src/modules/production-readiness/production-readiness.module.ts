@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
-
-// Production Readiness 模块：用于生产环境就绪检查
-// 包括健康检查、配置验证、依赖检查等
+import { ConfigService } from '../../common/config/config.service';
+import { AuthModule } from '../auth/auth.module';
+import { ProductionReadinessController } from './production-readiness.controller';
+import { ProductionReadinessRepository } from './production-readiness.repository';
+import { ProductionReadinessUseCase } from './production-readiness.use-case';
 
 @Module({
-  providers: [],
-  exports: [],
+  imports: [AuthModule],
+  controllers: [ProductionReadinessController],
+  providers: [ConfigService, ProductionReadinessRepository, ProductionReadinessUseCase],
 })
 export class ProductionReadinessModule {}

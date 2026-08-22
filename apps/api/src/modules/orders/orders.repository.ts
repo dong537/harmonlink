@@ -213,7 +213,7 @@ export class OrdersRepository {
       const tenantAdmin = tenantAdminByTenantId.get(order.tenantId);
       const latestMirror = order.upstream_order_mirrors[0] ?? null;
       const latestJob = order.fulfillment_jobs[0] ?? null;
-      const failed = order.status === 'FAILED';
+      const jobFailed = latestJob?.status === 'FAILED';
       const {
         user,
         resource,
@@ -231,8 +231,8 @@ export class OrdersRepository {
         userEmail: user?.email ?? null,
         providerCode: latestMirror?.providerCode ?? latestJob?.providerCode ?? resource?.providerCode ?? null,
         upstreamOrderId: latestMirror?.upstreamOrderId ?? null,
-        failureStage: failed && latestJob?.status === 'FAILED' ? latestJob.status : null,
-        failureError: failed ? latestJob?.lastError ?? baseOrder.failReason ?? null : null,
+        failureStage: jobFailed ? latestJob.status : null,
+        failureError: jobFailed ? latestJob.lastError ?? baseOrder.failReason ?? null : baseOrder.failReason ?? null,
         resource: resource
           ? {
               id: resource.id,

@@ -8,16 +8,15 @@ import { useTranslation } from 'react-i18next';
 import { buildQuery, userApiRequest } from '../../shared/api/client';
 import { ListPage } from '../../shared/ui/list-page';
 import { PageHeader } from '../../shared/ui/page-header';
-import { formatResourceLocationZh } from '../../shared/resource/resource-labels';
 import { getBackendReason, resellerHeroStyle, resellerIconStyle, resellerMetricBodyStyle, resellerMetricToneStyle, resellerSummaryStripStyle, resellerToolbarStyle, resellerWorkspaceHeaderStyle } from './reseller-ui';
 
 interface PriceRule {
   id: string;
-  resourceId: string;
+  skuId: string;
   durationDays: number;
   unitPrice: string;
   currency: string;
-  resource?: { id: string; code: string; name: string; displayName?: string | null; countryCode?: string | null; upstreamResourceId?: string | null };
+  sku?: { id: string; code: string; name: string; description?: string | null };
 }
 
 interface PriceTemplate {
@@ -25,16 +24,14 @@ interface PriceTemplate {
   name: string;
   description?: string | null;
   isDefault: boolean;
-  price_rules: PriceRule[];
+  sku_price_rules: PriceRule[];
 }
 
-interface ResourceDto {
-  resourceId: string;
+interface SkuDto {
+  skuId: string;
   code: string;
   name: string;
-  displayName?: string | null;
-  countryCode?: string | null;
-  upstreamResourceId?: string | null;
+  description?: string | null;
   unitPrice: string | null;
   currency: string | null;
   enabled: boolean;
@@ -47,7 +44,7 @@ interface CreateTemplateValues {
 }
 
 interface RuleValues {
-  resourceIds: string[];
+  skuIds: string[];
   unitPrice: string | number;
 }
 
@@ -72,7 +69,7 @@ export function ResellerPricingFeature() {
 
   const resourcesQuery = useQuery({
     queryKey: ['customer-reseller-price-resources'],
-    queryFn: () => userApiRequest<{ items: ResourceDto[] }>('/api/customer/reseller/products?page=1&pageSize=20&status=ENABLED'),
+    queryFn: () => userApiRequest<{ items: SkuDto[] }>('/api/customer/reseller/products?page=1&pageSize=20&status=ENABLED'),
   });
 
   const createMutation = useMutation({
@@ -101,15 +98,15 @@ export function ResellerPricingFeature() {
       userApiRequest(`/api/customer/reseller/templates/${encodeURIComponent(templateId)}/rules`, {
         method: 'POST',
         body: JSON.stringify({
-          rules: values.resourceIds.map((resourceId) => {
-            const resource = (resourcesQuery.data?.items ?? []).find((item) => item.resourceId === resourceId);
-            if (!resource?.currency) throw new Error(t('customer.reseller.pricing.resourceCurrencyMissing'));
+          rules: values.skuIds.map((skuId) => {
+            const sku = (resourcesQuery.data?.items ?? []).find((item) => item.skuId === skuId);
+            if (!sku?.currency) throw new Error(t('customer.reseller.pricing.resourceCurrencyMissing'));
             if (!values.unitPrice || Number(values.unitPrice) <= 0) throw new Error(t('customer.reseller.pricing.unitPriceRequired'));
             return {
-              resourceId,
+              skuId,
               durationDays: 30,
               unitPrice: String(values.unitPrice),
-              currency: resource.currency,
+              currency: sku.currency,
               minQty: 1,
             };
           }),
@@ -141,21 +138,21 @@ export function ResellerPricingFeature() {
     {
       title: t('customer.reseller.pricing.rules'),
       key: 'rules',
-      render: (_: unknown, row) => row.price_rules.length === 0
+      render: (_: unknown, row) => row.sku_price_rules.length === 0
         ? <Typography.Text type="secondary">{t('empty')}</Typography.Text>
         : (
           <Space direction="vertical" size={4}>
-            {row.price_rules.slice(0, 8).map((rule) => (
+            {row.sku_price_rules.slice(0, 8).map((rule) => (
               <Space key={rule.id} size={6} wrap>
                 <Tag color="geekblue">{t('customer.reseller.products.mainSite')}</Tag>
                 <Typography.Text>
-                  {formatResellerRuleResource(rule)}
+                  {formatResellerRuleSku(rule)}
                 </Typography.Text>
                 <Typography.Text strong>{formatRulePrice(rule, t)}</Typography.Text>
               </Space>
             ))}
-            {row.price_rules.length > 8 && (
-              <Typography.Text type="secondary">{t('customer.reseller.pricing.moreRules', { count: row.price_rules.length - 8 })}</Typography.Text>
+            {row.sku_price_rules.length > 8 && (
+              <Typography.Text type="secondary">{t('customer.reseller.pricing.moreRules', { count: row.sku_price_rules.length - 8 })}</Typography.Text>
             )}
           </Space>
         ),
@@ -168,16 +165,15 @@ export function ResellerPricingFeature() {
   ];
 
   const templates = query.data?.items ?? [];
-  const ruleCount = templates.reduce((sum, item) => sum + item.price_rules.length, 0);
-  const enabledResources = (resourcesQuery.data?.items ?? []).filter((resource) => resource.enabled);
+  const ruleCount = templates.reduce((sum, item) => sum + item.sku_price_rules.length, 0);
+  const enabledSkus = (resourcesQuery.data?.items ?? []).filter((sku) => sku.enabled);
   const defaultTemplateCount = templates.filter((item) => item.isDefault).length;
 
-  const resourceOptions = enabledResources.map((resource) => {
-    const location = formatResourceLocationZh(resource);
+  const resourceOptions = enabledSkus.map((sku) => {
     return {
-      value: resource.resourceId,
-      label: `${location.title} / ${resource.unitPrice ?? '-'} ${resource.currency ?? ''}`,
-      searchText: [location.title, resource.code, resource.name, resource.displayName, resource.upstreamResourceId].filter(Boolean).join(' '),
+      value: sku.skuId,
+      label: `${sku.code} / ${sku.name} / ${sku.unitPrice ?? '-'} ${sku.currency ?? ''}`,
+      searchText: [sku.code, sku.name, sku.description].filter(Boolean).join(' '),
     };
   });
   const resourcePoolError = resourcesQuery.isError ? getBackendReason(resourcesQuery.error, t) : null;
@@ -228,7 +224,7 @@ export function ResellerPricingFeature() {
         </Col>
         <Col xs={24} sm={8}>
           <Card className="ipx-reseller-metric-card ipx-reseller-pricing-metric-card ipx-reseller-management-metric-card" variant="borderless" style={resellerMetricToneStyle('#16a34a')} styles={resellerMetricBodyStyle}>
-            <Statistic title={t('customer.reseller.pricing.metrics.resources')} value={resourcesQuery.data ? enabledResources.length : '-'} prefix={<AppstoreOutlined />} />
+            <Statistic title={t('customer.reseller.pricing.metrics.resources')} value={resourcesQuery.data ? enabledSkus.length : '-'} prefix={<AppstoreOutlined />} />
           </Card>
         </Col>
       </Row>
@@ -256,7 +252,7 @@ export function ResellerPricingFeature() {
           showIcon
         />
       )}
-      {!resourcesQuery.isError && !resourcesQuery.isLoading && enabledResources.length === 0 && (
+      {!resourcesQuery.isError && !resourcesQuery.isLoading && enabledSkus.length === 0 && (
         <Alert
           type="warning"
           message={t('customer.reseller.pricing.noEnabledProducts')}
@@ -283,7 +279,7 @@ export function ResellerPricingFeature() {
                 <Tag color="blue">{t('customer.reseller.pricing.summary.total', { total: query.data?.total ?? 0 })}</Tag>
                 <Tag color="geekblue">{t('customer.reseller.pricing.summary.source')}</Tag>
                 <Tag>{t('customer.reseller.pricing.summary.currentPage', { count: templates.length })}</Tag>
-                <Tag color="geekblue">{t('customer.reseller.pricing.summary.resources', { count: enabledResources.length })}</Tag>
+                <Tag color="geekblue">{t('customer.reseller.pricing.summary.resources', { count: enabledSkus.length })}</Tag>
                 <Tag color={ruleCount > 0 ? 'green' : undefined}>{t('customer.reseller.pricing.summary.rules', { count: ruleCount })}</Tag>
                 <Tag color={defaultTemplateCount > 0 ? 'blue' : 'orange'}>{t('customer.reseller.pricing.summary.defaultTemplates', { count: defaultTemplateCount })}</Tag>
                 <Button
@@ -372,7 +368,7 @@ export function ResellerPricingFeature() {
           layout="vertical"
           onFinish={(values) => ruleTemplate && rulesMutation.mutate({ templateId: ruleTemplate.id, values })}
         >
-          <Form.Item name="resourceIds" label={t('customer.reseller.pricing.resources')} rules={[{ required: true }]}>
+          <Form.Item name="skuIds" label={t('customer.reseller.pricing.resources')} rules={[{ required: true }]}>
             <Select
               mode="multiple"
               options={resourceOptions}
@@ -414,9 +410,9 @@ export function ResellerPricingFeature() {
   );
 }
 
-function formatResellerRuleResource(rule: PriceRule): string {
-  if (!rule.resource) return rule.resourceId;
-  return formatResourceLocationZh(rule.resource).title;
+function formatResellerRuleSku(rule: PriceRule): string {
+  if (!rule.sku) return rule.skuId;
+  return `${rule.sku.code} / ${rule.sku.name}`;
 }
 
 function formatRulePrice(rule: PriceRule, t: (key: string, values?: Record<string, unknown>) => string): string {

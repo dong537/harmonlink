@@ -143,11 +143,11 @@ describe('admin order operation contracts', () => {
     expect(screen.getByText('adminOrders.amount')).toBeInTheDocument();
     expect(screen.getByText('adminOrders.statusFlow')).toBeInTheDocument();
     expect(screen.getAllByText('日本').length).toBeGreaterThanOrEqual(1);
-    expect(screen.queryByText(formatProviderLabel('IPIPD'))).not.toBeInTheDocument();
-    expect(screen.queryByText('UP-1001')).not.toBeInTheDocument();
+    expect(screen.getByText(formatProviderLabel('IPIPD'))).toBeInTheDocument();
+    expect(screen.getByText('UP-1001')).toBeInTheDocument();
     expect(screen.queryByText('job-failed-1')).not.toBeInTheDocument();
-    expect(screen.queryByText('分站 A')).not.toBeInTheDocument();
-    expect(screen.queryByText('reseller-a')).not.toBeInTheDocument();
+    expect(screen.getAllByText('分站 A').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('reseller-a').length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText('adminOrders.tenantOwner: owner@example.com')).not.toBeInTheDocument();
     expect(screen.getAllByText('buyer@example.com').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('FAILED').length).toBeGreaterThanOrEqual(1);

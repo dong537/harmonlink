@@ -9,7 +9,6 @@ import { requestIdStorage } from '../../common/logging/request-id.context';
 import { WalletRepository } from '../wallet/wallet.repository';
 import { AdjustWalletDto, WalletDto } from '../wallet/dto';
 import { assertPositiveAmount, assertSameCurrency } from '../wallet/domain';
-import { isInventorySnapshotStale } from '../resources/domain';
 
 const BCRYPT_COST = 10;
 type PrismaTransactionClient = Omit<typeof prisma, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>;
@@ -39,16 +38,14 @@ export type ResellerCustomer = {
 };
 
 export type ResellerProduct = {
-  resourceId: string;
+  skuId: string;
   code: string;
   name: string;
-  displayName: string | null;
-  ipType: string;
-  protocol: string;
+  description: string | null;
   status: string;
-  stock: number | null;
+  availableInventory: number | null;
   inventoryCapturedAt: Date | null;
-  inventoryIsStale: boolean | null;
+  inventoryIsStale: boolean;
   enabled: boolean;
   unitPrice: string | null;
   currency: string | null;
@@ -91,10 +88,10 @@ export class CustomerResellerRepository {
     monthStart.setUTCHours(0, 0, 0, 0);
     const [customerCount, orderCount, monthlyOrders, templateCount, productCount, saleableProductCount, wallets] = await Promise.all([
       prisma.users.count({ where: { siteId, tenantId: tenant.id } }),
-      prisma.orders.count({ where: { siteId, tenantId: tenant.id } }),
-      prisma.orders.count({ where: { siteId, tenantId: tenant.id, createdAt: { gte: monthStart } } }),
+      prisma.dedicated_line_orders.count({ where: { siteId, tenantId: tenant.id } }),
+      prisma.dedicated_line_orders.count({ where: { siteId, tenantId: tenant.id, createdAt: { gte: monthStart } } }),
       prisma.price_templates.count({ where: { siteId, tenantId: tenant.id } }),
-      prisma.platform_resources.count({ where: mainSiteSaleableResourceWhere(siteId) }),
+      prisma.service_skus.count({ where: dedicatedLineSkuWhere(siteId) }),
       this.countTenantProducts(siteId, tenant.id),
       prisma.wallets.findMany({ where: { siteId, tenantId: tenant.id }, select: { available: true, currency: true } }),
     ]);
@@ -108,44 +105,40 @@ export class CustomerResellerRepository {
 
   async listProducts(siteId: string, tenantId: string, query: PageQueryDto & { search?: string; status?: string } = {}): Promise<PageResult<ResellerProduct>> {
     const { page, pageSize } = normalizePageQuery(query);
-    const where = mainSiteSaleableResourceWhere(siteId);
+    const where = dedicatedLineSkuWhere(siteId);
     const template = await this.findDefaultTemplate(siteId, tenantId);
     if (query.search) {
       where.OR = [
         { code: { contains: query.search, mode: 'insensitive' } },
         { name: { contains: query.search, mode: 'insensitive' } },
-        { displayName: { contains: query.search, mode: 'insensitive' } },
+        { description: { contains: query.search, mode: 'insensitive' } },
       ];
     }
     if (query.status === 'ENABLED') {
       if (!template) return { page, pageSize, total: 0, items: [] };
-      const enabledRules = await prisma.price_rules.findMany({
+      const enabledRules = await prisma.sku_price_rules.findMany({
         where: { siteId, templateId: template.id, durationDays: 30 },
-        select: { resourceId: true },
+        select: { skuId: true },
       });
-      where.id = { in: enabledRules.map((rule) => rule.resourceId) };
+      where.id = { in: enabledRules.map((rule) => rule.skuId) };
     }
     if (query.status === 'DISABLED' && template) {
-      const enabledRules = await prisma.price_rules.findMany({
+      const enabledRules = await prisma.sku_price_rules.findMany({
         where: { siteId, templateId: template.id, durationDays: 30 },
-        select: { resourceId: true },
+        select: { skuId: true },
       });
-      where.id = { notIn: enabledRules.map((rule) => rule.resourceId) };
+      where.id = { notIn: enabledRules.map((rule) => rule.skuId) };
     }
 
     const [total, rows] = await Promise.all([
-      prisma.platform_resources.count({ where }),
-      prisma.platform_resources.findMany({
+      prisma.service_skus.count({ where }),
+      prisma.service_skus.findMany({
         where,
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
-          inventory_snapshots: {
-            orderBy: { capturedAt: 'desc' },
-            take: 1,
-          },
-          price_rules: {
+          skuPriceRules: {
             where: { siteId, templateId: template?.id ?? '', durationDays: 30, minQty: { lte: 1 } },
             orderBy: { minQty: 'desc' },
             take: 1,
@@ -153,42 +146,44 @@ export class CustomerResellerRepository {
         },
       }),
     ]);
-    return { page, pageSize, total, items: rows.map(toResellerProduct) };
+    const inventoryBySku = await this.summarizeSkuInventory(siteId, rows.map((row) => row.id));
+    return { page, pageSize, total, items: rows.map((row) => toResellerProduct(row, inventoryBySku.get(row.id))) };
   }
 
   async upsertProductRules(siteId: string, tenantId: string, products: Array<{
-    resourceId: string;
+    skuId: string;
     enabled: boolean;
     unitPrice?: string;
     currency?: string;
   }>) {
     const template = await this.ensureDefaultTemplate(siteId, tenantId);
-    const resourceIds = [...new Set(products.map((product) => product.resourceId))];
-    const resourceCount = await prisma.platform_resources.count({
-      where: { ...mainSiteSaleableResourceWhere(siteId), id: { in: resourceIds } },
+    const skuIds = [...new Set(products.map((product) => product.skuId))];
+    const skuCount = await prisma.service_skus.count({
+      where: { ...dedicatedLineSkuWhere(siteId), id: { in: skuIds } },
     });
-    if (resourceCount !== resourceIds.length) {
-      throw new AppError(ErrorCode.NOT_FOUND, 'resource_not_found', 404);
+    if (skuCount !== skuIds.length) {
+      throw new AppError(ErrorCode.NOT_FOUND, 'sku_not_found', 404);
     }
     return prisma.$transaction(products.map((product) => {
       if (!product.enabled) {
-        return prisma.price_rules.deleteMany({
-          where: { siteId, templateId: template.id, resourceId: product.resourceId, durationDays: 30 },
+        return prisma.sku_price_rules.deleteMany({
+          where: { siteId, templateId: template.id, skuId: product.skuId, durationDays: 30 },
         });
       }
-      return prisma.price_rules.upsert({
+      return prisma.sku_price_rules.upsert({
         where: {
-          siteId_templateId_resourceId_durationDays: {
+          siteId_templateId_skuId_durationDays_minQty: {
             siteId,
             templateId: template.id,
-            resourceId: product.resourceId,
+            skuId: product.skuId,
             durationDays: 30,
+            minQty: 1,
           },
         },
         create: {
           siteId,
           templateId: template.id,
-          resourceId: product.resourceId,
+          skuId: product.skuId,
           durationDays: 30,
           unitPrice: product.unitPrice!,
           currency: product.currency!,
@@ -221,7 +216,7 @@ export class CustomerResellerRepository {
           status: true,
           createdAt: true,
           wallets: { take: 1, select: { available: true, frozen: true, currency: true } },
-          _count: { select: { orders: true } },
+          _count: { select: { dedicated_line_orders: true } },
         },
       }),
     ]);
@@ -239,7 +234,7 @@ export class CustomerResellerRepository {
           available: wallet?.available.toString() ?? '0',
           frozen: wallet?.frozen.toString() ?? '0',
           currency: wallet?.currency ?? '',
-          orderCount: row._count.orders,
+          orderCount: row._count.dedicated_line_orders,
           createdAt: row.createdAt,
         };
       }),
@@ -376,19 +371,64 @@ export class CustomerResellerRepository {
 
   async listOrders(siteId: string, tenantId: string, query: PageQueryDto & { userId?: string; status?: string } = {}) {
     const { page, pageSize } = normalizePageQuery(query);
-    const where: Prisma.ordersWhereInput = { siteId, tenantId };
+    const where: Prisma.dedicated_line_ordersWhereInput = { siteId, tenantId };
     if (query.userId) where.userId = query.userId;
-    if (query.status) where.status = query.status as Prisma.ordersWhereInput['status'];
-    const [total, items] = await Promise.all([
-      prisma.orders.count({ where }),
-      prisma.orders.findMany({
+    if (query.status) {
+      if (!isExternalJobStatus(query.status)) {
+        throw new AppError(ErrorCode.VALIDATION_ERROR, 'dedicated_line_order_status_invalid', 400);
+      }
+      where.executionJob = { is: { kind: 'PROVIDER_DEDICATED_LINE_ORDER', status: query.status } };
+    }
+    const [total, rows] = await Promise.all([
+      prisma.dedicated_line_orders.count({ where }),
+      prisma.dedicated_line_orders.findMany({
         where,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: { user: { select: { email: true } }, resource: { select: { code: true, name: true, displayName: true } } },
+        include: {
+          user: { select: { email: true } },
+          executionJob: {
+            select: { status: true, attempt: true, maxAttempts: true, lastErrorCode: true, createdAt: true, updatedAt: true },
+          },
+          lines: { select: { status: true } },
+        },
       }),
     ]);
+    const items = rows.map((row) => {
+      if (!row.executionJob) {
+        throw new AppError(ErrorCode.INTERNAL_ERROR, 'dedicated_line_order_execution_missing', 500);
+      }
+      const lineStatuses: Record<string, number> = {};
+      for (const line of row.lines) lineStatuses[line.status] = (lineStatuses[line.status] ?? 0) + 1;
+      return {
+        id: row.id,
+        userId: row.userId,
+        user: row.user,
+        sku: { code: row.skuCode, name: row.skuName },
+        countryCode: row.countryCode,
+        regionCode: row.regionCode,
+        businessType: row.businessType,
+        quantity: row.quantity,
+        durationDays: row.durationDays,
+        unitPrice: row.unitPrice.toString(),
+        totalPrice: row.totalPrice.toString(),
+        currency: row.currency,
+        priceSource: row.priceSource,
+        contractVersion: row.contractVersion,
+        execution: {
+          status: row.executionJob.status,
+          attempt: row.executionJob.attempt,
+          maxAttempts: row.executionJob.maxAttempts,
+          lastErrorCode: row.executionJob.lastErrorCode,
+          createdAt: row.executionJob.createdAt,
+          updatedAt: row.executionJob.updatedAt,
+        },
+        lineStatuses,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      };
+    });
     return { page, pageSize, total, items };
   }
 
@@ -404,9 +444,9 @@ export class CustomerResellerRepository {
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
-          price_rules: {
+          sku_price_rules: {
             orderBy: [{ durationDays: 'asc' }, { createdAt: 'asc' }],
-            include: { resource: { select: { id: true, code: true, name: true, displayName: true } } },
+            include: { sku: { select: { id: true, code: true, name: true, description: true } } },
           },
         },
       }),
@@ -427,7 +467,7 @@ export class CustomerResellerRepository {
   private async countTenantProducts(siteId: string, tenantId: string): Promise<number> {
     const template = await this.findDefaultTemplate(siteId, tenantId);
     if (!template) return 0;
-    return prisma.price_rules.count({ where: { siteId, templateId: template.id, durationDays: 30 } });
+    return prisma.sku_price_rules.count({ where: { siteId, templateId: template.id, durationDays: 30, minQty: 1 } });
   }
 
   private async findDefaultTemplate(siteId: string, tenantId: string): Promise<{ id: string } | null> {
@@ -450,7 +490,7 @@ export class CustomerResellerRepository {
   }
 
   async upsertRules(siteId: string, tenantId: string, templateId: string, rules: Array<{
-    resourceId: string;
+    skuId: string;
     durationDays: number;
     unitPrice: string;
     currency: string;
@@ -458,49 +498,110 @@ export class CustomerResellerRepository {
   }>) {
     const template = await prisma.price_templates.findFirst({ where: { id: templateId, siteId, tenantId } });
     if (!template) throw new AppError(ErrorCode.NOT_FOUND, 'price_template_not_found', 404);
+    const skuIds = [...new Set(rules.map((rule) => rule.skuId))];
+    const skuCount = await prisma.service_skus.count({
+      where: { ...dedicatedLineSkuWhere(siteId), id: { in: skuIds } },
+    });
+    if (skuCount !== skuIds.length) throw new AppError(ErrorCode.NOT_FOUND, 'sku_not_found', 404);
     return prisma.$transaction(rules.map((rule) =>
-      prisma.price_rules.upsert({
-        where: { siteId_templateId_resourceId_durationDays: { siteId, templateId, resourceId: rule.resourceId, durationDays: rule.durationDays } },
-        create: { siteId, templateId, resourceId: rule.resourceId, durationDays: rule.durationDays, unitPrice: rule.unitPrice, currency: rule.currency, minQty: rule.minQty ?? 1 },
+      prisma.sku_price_rules.upsert({
+        where: {
+          siteId_templateId_skuId_durationDays_minQty: {
+            siteId,
+            templateId,
+            skuId: rule.skuId,
+            durationDays: rule.durationDays,
+            minQty: rule.minQty ?? 1,
+          },
+        },
+        create: { siteId, templateId, skuId: rule.skuId, durationDays: rule.durationDays, unitPrice: rule.unitPrice, currency: rule.currency, minQty: rule.minQty ?? 1 },
         update: { unitPrice: rule.unitPrice, currency: rule.currency, minQty: rule.minQty ?? 1 },
       }),
     ));
   }
+
+  private async summarizeSkuInventory(siteId: string, skuIds: string[]): Promise<Map<string, SkuInventorySummary>> {
+    if (skuIds.length === 0) return new Map();
+    const snapshots = await prisma.dedicated_line_inventory_snapshots.findMany({
+      where: { siteId, skuId: { in: skuIds } },
+      select: {
+        skuId: true,
+        providerAccountId: true,
+        countryCode: true,
+        providerResourceId: true,
+        quantity: true,
+        reservedQuantity: true,
+        capturedAt: true,
+        expiresAt: true,
+      },
+    });
+    const latestByResource = new Map<string, typeof snapshots[number]>();
+    for (const snapshot of snapshots) {
+      const key = [snapshot.skuId, snapshot.providerAccountId, snapshot.countryCode, snapshot.providerResourceId].join(':');
+      const current = latestByResource.get(key);
+      if (!current || current.capturedAt < snapshot.capturedAt) latestByResource.set(key, snapshot);
+    }
+
+    const now = new Date();
+    const summaries = new Map<string, SkuInventorySummary>();
+    for (const snapshot of latestByResource.values()) {
+      const summary = summaries.get(snapshot.skuId) ?? { availableInventory: 0, inventoryCapturedAt: null, hasSnapshot: false, hasFreshSnapshot: false };
+      summary.hasSnapshot = true;
+      if (!summary.inventoryCapturedAt || summary.inventoryCapturedAt < snapshot.capturedAt) summary.inventoryCapturedAt = snapshot.capturedAt;
+      if (snapshot.expiresAt > now) {
+        summary.hasFreshSnapshot = true;
+        summary.availableInventory += Math.max(snapshot.quantity - snapshot.reservedQuantity, 0);
+      }
+      summaries.set(snapshot.skuId, summary);
+    }
+    return summaries;
+  }
 }
 
-type ResellerProductRow = Prisma.platform_resourcesGetPayload<{
+type ResellerProductRow = Prisma.service_skusGetPayload<{
   include: {
-    inventory_snapshots: true;
-    price_rules: true;
+    skuPriceRules: true;
   };
 }>;
 
-function mainSiteSaleableResourceWhere(siteId: string): Prisma.platform_resourcesWhereInput {
+type SkuInventorySummary = {
+  availableInventory: number;
+  inventoryCapturedAt: Date | null;
+  hasSnapshot: boolean;
+  hasFreshSnapshot: boolean;
+};
+
+function dedicatedLineSkuWhere(siteId: string): Prisma.service_skusWhereInput {
   return {
     siteId,
-    status: 'ACTIVE',
+    isActive: true,
     isVisible: true,
-    isSaleable: true,
+    capabilities: { path: ['delivery'], equals: 'dedicated-line' },
   };
 }
 
-function toResellerProduct(row: ResellerProductRow): ResellerProduct {
-  const latest = row.inventory_snapshots[0];
-  const rule = row.price_rules[0] ?? null;
-  const inventoryIsStale = latest ? isInventorySnapshotStale({ ...latest, providerCode: row.providerCode }) : null;
+function toResellerProduct(row: ResellerProductRow, inventory?: SkuInventorySummary): ResellerProduct {
+  const rule = row.skuPriceRules[0] ?? null;
   return {
-    resourceId: row.id,
+    skuId: row.id,
     code: row.code,
     name: row.name,
-    displayName: row.displayName,
-    ipType: row.ipType,
-    protocol: row.protocol,
-    status: row.status,
-    stock: latest?.stock ?? null,
-    inventoryCapturedAt: latest?.capturedAt ?? null,
-    inventoryIsStale,
+    description: row.description,
+    status: row.isActive && row.isVisible ? 'ACTIVE' : 'DISABLED',
+    availableInventory: inventory?.hasFreshSnapshot ? inventory.availableInventory : null,
+    inventoryCapturedAt: inventory?.inventoryCapturedAt ?? null,
+    inventoryIsStale: Boolean(inventory?.hasSnapshot && !inventory.hasFreshSnapshot),
     enabled: Boolean(rule),
     unitPrice: rule?.unitPrice.toString() ?? null,
     currency: rule?.currency ?? null,
   };
+}
+
+function isExternalJobStatus(value: string): value is 'QUEUED' | 'LEASED' | 'RETRYING' | 'COMPLETED' | 'FAILED' | 'NEEDS_OPERATOR' {
+  return value === 'QUEUED'
+    || value === 'LEASED'
+    || value === 'RETRYING'
+    || value === 'COMPLETED'
+    || value === 'FAILED'
+    || value === 'NEEDS_OPERATOR';
 }

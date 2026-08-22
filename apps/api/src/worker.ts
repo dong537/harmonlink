@@ -1,6 +1,10 @@
 export { ConfigGuard } from './common/config/config-guard';
 export { env } from './common/config/env.schema';
 export { PrismaModule } from './common/prisma/prisma.module';
+export {
+  ReclaimExpiredReservationsUseCase,
+  type ReclaimExpiredReservationsResult,
+} from './modules/dedicated-line-orders/domain';
 export { FulfillmentModule } from './modules/fulfillment/fulfillment.module';
 export { FulfillmentRepository } from './modules/fulfillment/fulfillment.repository';
 export { FulfillStaticProxyUseCase } from './modules/fulfillment/use-cases/fulfill-static-proxy.use-case';
@@ -13,9 +17,6 @@ export {
   ProcessDedicatedLineOrderUseCase,
   type DedicatedLineOrderExecutionResult,
 } from './modules/dedicated-line-orders/process-dedicated-line-order.use-case';
-export { DedicatedLineInventoryRepository } from './modules/dedicated-line-orders/dedicated-line-inventory.repository';
-export { ReclaimExpiredReservationsUseCase } from './modules/dedicated-line-orders/domain';
-export type { ReclaimExpiredReservationsResult } from './modules/dedicated-line-orders/domain';
 export { AlertsModule } from './modules/alerts/alerts.module';
 export { BarkAlertOutboxRepository } from './modules/alerts/bark-alert-outbox.repository';
 export {

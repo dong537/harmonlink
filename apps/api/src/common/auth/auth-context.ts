@@ -56,3 +56,12 @@ export function requireSystemContext(ctx: AuthenticatedContext): void {
     throw new AppError(ErrorCode.PERMISSION_DENIED, 'PERMISSION_DENIED', 403);
   }
 }
+
+export function requireScope(ctx: AuthenticatedContext, requiredScope: string): void {
+  const wildcard = requiredScope.includes(':')
+    ? `${requiredScope.slice(0, requiredScope.indexOf(':'))}:*`
+    : '*';
+  if (!ctx.scopes.includes(requiredScope) && !ctx.scopes.includes(wildcard) && !ctx.scopes.includes('*')) {
+    throw new AppError(ErrorCode.PERMISSION_DENIED, 'insufficient_scope', 403);
+  }
+}

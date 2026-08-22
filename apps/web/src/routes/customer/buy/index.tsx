@@ -1,6 +1,6 @@
 import React from 'react';
-import { BuyStaticProxyFeature } from '../../../features/customer-proxies/buy-static-proxy.feature';
+import { DedicatedLinePurchaseFeature } from '../../../features/dedicated-lines/dedicated-line-purchase.feature';
 
 export function CustomerBuyPage() {
-  return <BuyStaticProxyFeature />;
+  return <DedicatedLinePurchaseFeature />;
 }

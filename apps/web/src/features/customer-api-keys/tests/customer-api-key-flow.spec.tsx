@@ -12,7 +12,14 @@ import {
 import * as client from '../../../shared/api/client';
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => {
+      if (key === 'customer.apiKeys.reason.api_key_not_found') return 'API key was not found';
+      if (key === 'customer.apiKeys.statusValue.ACTIVE') return 'Active';
+      if (key === 'customer.apiKeys.statusValue.REVOKED') return 'Revoked';
+      return key;
+    },
+  }),
 }));
 
 function renderWithQuery(ui: React.ReactElement) {
@@ -63,12 +70,15 @@ describe('customer api key feature contracts', () => {
     expect(apiKeyStatusColor('ROTATING')).toBe('processing');
   });
 
-  it('injects tenantId into the create body and omits empty ipWhitelist', () => {
+  it('creates dedicated read keys by default and preserves the legacy residential preset explicitly', () => {
     expect(buildCreateApiKeyBody({ tenantId: 'tenant-1', name: ' Order automation ' })).toEqual({
       tenantId: 'tenant-1',
       name: 'Order automation',
-      scopes: ['res_static:*'],
+      scopes: ['dedicated:*'],
       ipWhitelist: [],
+    });
+    expect(buildCreateApiKeyBody({ tenantId: 'tenant-1', name: 'Legacy reader', purpose: 'RESIDENTIAL' })).toMatchObject({
+      scopes: ['res_static:*'],
     });
   });
 
@@ -98,7 +108,8 @@ describe('customer api key feature contracts', () => {
     expect(screen.getByText('customer.apiKeys.neverUsedInline')).toBeInTheDocument();
     expect(await screen.findByText('customer.apiKeys.security.title')).toBeInTheDocument();
     expect(screen.getAllByText('customer.apiKeys.defaultScopeLabel')).toHaveLength(2);
-    expect(screen.getAllByText('customer.apiKeys.statusUnknown').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('Active')).toBeInTheDocument();
+    expect(screen.getByText('Revoked')).toBeInTheDocument();
     expect(screen.getByText((content) => content.startsWith('customer.apiKeys.statusSummary.ACTIVE'))).toBeInTheDocument();
     expect(screen.getByText((content) => content.startsWith('customer.apiKeys.statusSummary.INACTIVE'))).toBeInTheDocument();
     expect(spy.mock.calls.some((c) => String(c[0]).startsWith('/api/api-keys?'))).toBe(true);
@@ -137,7 +148,7 @@ describe('customer api key feature contracts', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'customer.apiKeys.create' }));
 
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText('customer.apiKeys.form.permissionPreview')).toBeInTheDocument();
+    expect(within(dialog).getByText('customer.apiKeys.form.dedicatedPermissionPreview')).toBeInTheDocument();
     fireEvent.change(within(dialog).getByLabelText('customer.apiKeys.form.name'), {
       target: { value: 'Order automation' },
     });
@@ -147,7 +158,7 @@ describe('customer api key feature contracts', () => {
     await waitFor(() => expect(createBody).toMatchObject({
       tenantId: 'tenant-1',
       name: 'Order automation',
-      scopes: ['res_static:*'],
+      scopes: ['dedicated:*'],
       ipWhitelist: [],
     }));
     expect(await screen.findByText('plain-secret-key')).toBeInTheDocument();
@@ -199,6 +210,6 @@ describe('customer api key feature contracts', () => {
     const confirmButtons = await screen.findAllByRole('button', { name: 'customer.apiKeys.revoke' });
     fireEvent.click(confirmButtons[confirmButtons.length - 1]!);
 
-    expect(await screen.findByText('api_key_not_found')).toBeInTheDocument();
+    expect(await screen.findByText('API key was not found')).toBeInTheDocument();
   });
 });

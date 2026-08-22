@@ -13,6 +13,7 @@ import { formatDateTime } from '../../shared/time/time';
 import { FulfillmentDetail } from './fulfillment-detail.feature';
 import { AdminOrderOperations } from './admin-order-operations.feature';
 import { formatMoneyAmount } from '../../shared/money/money';
+import { formatProviderLabel } from '../../shared/provider/provider-labels';
 import { formatResourceLocationZh } from '../../shared/resource/resource-labels';
 
 interface OrderDto {
@@ -95,6 +96,14 @@ export function OrderListFeature({ tenantId, hideTitle = false }: OrderListFeatu
       width: 230,
       render: (_: unknown, row) => (
         <Space direction="vertical" size={4}>
+          <Typography.Text strong style={{ maxWidth: 190 }} ellipsis={{ tooltip: row.tenantName || row.tenantCode || '-' }}>
+            {row.tenantName || row.tenantCode || '-'}
+          </Typography.Text>
+          {row.tenantCode && row.tenantName ? (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {row.tenantCode}
+            </Typography.Text>
+          ) : null}
           <Typography.Text strong style={{ maxWidth: 190 }} ellipsis={{ tooltip: row.userEmail || row.userId }}>
             {row.userEmail || row.userId}
           </Typography.Text>
@@ -113,6 +122,16 @@ export function OrderListFeature({ tenantId, hideTitle = false }: OrderListFeatu
           <Typography.Text strong style={{ maxWidth: 280 }} ellipsis={{ tooltip: getResourceTitle(row) }}>
             {getResourceTitle(row)}
           </Typography.Text>
+          {row.providerCode ? (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {formatProviderLabel(row.providerCode)}
+            </Typography.Text>
+          ) : null}
+          {row.upstreamOrderId ? (
+            <Typography.Text copyable={{ text: row.upstreamOrderId }} type="secondary" style={{ fontSize: 12, maxWidth: 260 }} ellipsis={{ tooltip: row.upstreamOrderId }}>
+              {row.upstreamOrderId}
+            </Typography.Text>
+          ) : null}
           {row.resourceId && (
             <Typography.Text copyable={{ text: row.resourceId }} type="secondary" style={{ fontSize: 12, maxWidth: 260 }} ellipsis={{ tooltip: row.resourceId }}>
               {t('adminOrders.resourceId')}: {shortId(row.resourceId)}

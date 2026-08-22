@@ -225,8 +225,17 @@ function toDto(account: {
   updatedAt: Date;
 }): TenantProviderAccountDto {
   return {
-    ...account,
+    id: account.id,
+    siteId: account.siteId,
     tenantId: account.tenantId ?? '',
+    providerCode: account.providerCode,
+    status: account.status,
+    baseUrl: account.baseUrl,
+    timeoutMs: account.timeoutMs,
+    inventorySyncEnabled: account.inventorySyncEnabled,
+    enabledCountryCodes: account.enabledCountryCodes,
+    createdAt: account.createdAt,
+    updatedAt: account.updatedAt,
     availableCountries: [],
   };
 }

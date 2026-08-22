@@ -43,6 +43,44 @@ beforeEach(async () => {
 });
 
 describe('api key integration', () => {
+  it('enforces dedicated read scopes on the dedicated OpenAPI', async () => {
+    await prisma.service_skus.create({
+      data: {
+        siteId,
+        code: 'SV',
+        name: 'Short Video Dedicated Line',
+        capabilities: { delivery: 'dedicated-line' },
+      },
+    });
+    const deniedKey = await seedApiKey({
+      siteId,
+      tenantId,
+      ownerId: userId,
+      ownerType: 'USER',
+      scopes: ['dedicated:wallet:read'],
+    });
+    const denied = await request
+      .get('/api/openapi/dedicated/skus')
+      .set('apikey', deniedKey.plainKey);
+    expect(denied.status).toBe(403);
+    expect(denied.body.data.reasonKey).toBe('insufficient_scope');
+
+    const allowedKey = await seedApiKey({
+      siteId,
+      tenantId,
+      ownerId: userId,
+      ownerType: 'USER',
+      scopes: ['dedicated:catalog:read'],
+    });
+    const allowed = await request
+      .get('/api/openapi/dedicated/skus')
+      .set('apikey', allowedKey.plainKey);
+    expect(allowed.status).toBe(200);
+    expect(allowed.body.data).toEqual([
+      expect.objectContaining({ code: 'SV', name: 'Short Video Dedicated Line' }),
+    ]);
+  });
+
   it('creates an API key and stores only its hash', async () => {
     const token = await loginAs(request, USER_EMAIL, USER_PW, siteId);
 

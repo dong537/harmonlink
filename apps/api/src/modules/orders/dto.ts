@@ -25,14 +25,6 @@ export class AdminCreateStaticProxyOrderDto extends CreateStaticProxyOrderDto {
   reason!: string;
 }
 
-export class CreateStaticProxyOrderResultDto {
-  @ApiProperty()
-  orderId!: string;
-
-  @ApiProperty()
-  status!: string;
-}
-
 export class AdminOrderOperationDto {
   @ApiPropertyOptional({ description: 'Operator reason recorded in audit logs' })
   reason?: string;

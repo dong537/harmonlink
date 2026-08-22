@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { randomBytes } from 'node:crypto';
 import { ConfigService } from '../../common/config/config.service';
 import { AuthenticatedContext } from '../../common/auth/auth-context';
 import { encryptAesGcm } from '../../common/crypto/aes-gcm';
@@ -10,7 +11,7 @@ import { SwitchIpUseCase } from './use-cases/switch-ip.use-case';
 import { BatchProxyLifecycleUseCase } from './use-cases/batch-proxy-lifecycle.use-case';
 import { ProxyAuditService } from './proxy-audit.service';
 
-const ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+const ENCRYPTION_KEY = randomBytes(32).toString('hex');
 
 function createController() {
   const repo = {

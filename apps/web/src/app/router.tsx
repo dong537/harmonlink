@@ -35,11 +35,13 @@ function preloadInitialAdminRouteChunks() {
   if (pathname === '/admin' || pathname.startsWith('/admin/dashboard')) {
     void importAdminDashboard();
   } else if (pathname.startsWith('/admin/resources') || pathname.startsWith('/admin/pricing')) {
-    void importAdminResources();
+    void importAdminPricing();
   } else if (pathname.startsWith('/admin/users')) {
     void importAdminUsers();
   } else if (pathname.startsWith('/admin/providers')) {
     void importAdminProviders();
+  } else if (pathname.startsWith('/admin/control-plane')) {
+    void importAdminControlPlane();
   } else if (pathname.startsWith('/admin/orders')) {
     void importAdminOrders();
   }
@@ -77,14 +79,17 @@ const importAdminLogin = () => import('../routes/admin/login');
 const importAdminLayout = () => import('../routes/admin/_layout');
 const importAdminDashboard = () => import('../routes/admin/dashboard/index');
 const importAdminResources = () => import('../routes/admin/resources/index');
+const importAdminPricing = () => import('../routes/admin/pricing/index');
 const importAdminUsers = () => import('../routes/admin/users/index');
 const importAdminProviders = () => import('../routes/admin/providers/index');
+const importAdminControlPlane = () => import('../routes/admin/control-plane/index');
 const importAdminOrders = () => import('../routes/admin/orders/index');
 const adminLoginPage = lazyPage(importAdminLogin, 'AdminLoginPage');
 const adminLayout = lazyPage(importAdminLayout, 'AdminLayout');
 const customerLoginPage = lazyPage(() => import('../routes/customer/login'), 'CustomerLoginPage');
 const customerRegisterPage = lazyPage(() => import('../routes/customer/register'), 'CustomerRegisterPage');
 const customerLayout = lazyPage(() => import('../routes/customer/_layout'), 'CustomerLayout');
+const customerDedicatedLinesPage = lazyPage(() => import('../routes/customer/dedicated-lines/index'), 'CustomerDedicatedLinesPage');
 
 preloadInitialAdminRouteChunks();
 
@@ -380,9 +385,8 @@ const adminResourcesRoute = createRoute({
 const adminPricingRoute = createRoute({
   getParentRoute: () => adminLayoutRoute as AnyRoute,
   path: '/pricing',
-  beforeLoad: () => {
-    throw redirect({ href: '/admin/resources' } as any);
-  },
+  beforeLoad: () => requireAdminRole(['PLATFORM_ADMIN']),
+  component: lazyPage(importAdminPricing, 'AdminPricingPage'),
 });
 
 const adminOrdersRoute = createRoute({
@@ -579,6 +583,19 @@ const customerProxiesRoute = createRoute({
   component: lazyPage(() => import('../routes/customer/proxies/index'), 'CustomerProxiesPage'),
 });
 
+const adminControlPlaneRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute as AnyRoute,
+  path: '/control-plane',
+  beforeLoad: () => requireAdminRole(['PLATFORM_ADMIN']),
+  component: lazyPage(importAdminControlPlane, 'AdminControlPlanePage'),
+});
+
+const customerDedicatedLinesRoute = createRoute({
+  getParentRoute: () => customerLayoutRoute as AnyRoute,
+  path: '/dedicated-lines',
+  component: customerDedicatedLinesPage,
+});
+
 const customerBuyRoute = createRoute({
   getParentRoute: () => customerLayoutRoute as AnyRoute,
   path: '/customer/buy',
@@ -645,6 +662,12 @@ const customerResellerOrdersRoute = createRoute({
   component: lazyPage(() => import('../routes/customer/reseller/orders'), 'CustomerResellerOrdersPage'),
 });
 
+const customerResellerConnectionsRoute = createRoute({
+  getParentRoute: () => customerLayoutRoute as AnyRoute,
+  path: '/reseller/connections',
+  component: lazyPage(() => import('../routes/customer/reseller/connections'), 'CustomerResellerConnectionsPage'),
+});
+
 const routeTree = rootRoute.addChildren([
   publicHomeRoute,
   publicBuyRoute,
@@ -709,6 +732,7 @@ const routeTree = rootRoute.addChildren([
     adminRequestLogsRoute,
     adminTicketsRoute,
     adminProvidersRoute,
+    adminControlPlaneRoute,
     adminTicketDetailRoute,
   ]),
   customerLoginRoute,
@@ -716,7 +740,8 @@ const routeTree = rootRoute.addChildren([
   customerLayoutRoute.addChildren([
     customerOverviewRoute,
     customerBuyRoute,
-    customerProxiesRoute,
+  customerProxiesRoute,
+  customerDedicatedLinesRoute,
     customerApiKeysRoute,
     customerTicketsRoute,
     customerTicketDetailRoute,
@@ -729,6 +754,7 @@ const routeTree = rootRoute.addChildren([
     customerResellerProductsRoute,
     customerResellerPricingRoute,
     customerResellerOrdersRoute,
+    customerResellerConnectionsRoute,
   ]),
 ]);
 

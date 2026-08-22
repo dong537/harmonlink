@@ -5,10 +5,11 @@ import { RequireAuth, RequireUser } from '../../common/auth/guards';
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { PageQueryDto } from '../../common/pagination/pagination.dto';
-import { PricingMatrixQuery, PricingMatrixSummaryQuery, PricingRepository, SkuPriceRuleQuery } from './pricing.repository';
+import { PricingMatrixQuery, PricingMatrixSummaryQuery, PricingRepository } from './pricing.repository';
 import { QuoteInput } from './domain';
 import { QuoteUseCase } from './use-cases/quote.use-case';
 import { ResourcesRepository } from '../resources/resources.repository';
+import { assertStaticProxyPurchaseDisabled } from '../orders/static-purchase-disabled';
 
 type CreateTemplateBody = {
   name: string;
@@ -49,25 +50,23 @@ type UserPriceOverrideBody = PriceOverrideBody & {
   userId: string;
 };
 
-type SkuPriceRuleBody = {
-  skuId: string;
-  durationDays: number;
-  unitPrice: string;
-  currency: string;
-  minQty?: number;
-};
-
-type SkuPriceRulesBody = SkuPriceRuleBody | { rules: SkuPriceRuleBody[] };
-
-type UserSkuPriceOverrideBody = SkuPriceRuleBody & {
-  tenantId: string;
-  userId: string;
-};
-
 type UserTemplateBindingBody = {
   tenantId: string;
   userId: string;
   templateId: string;
+};
+
+type DedicatedSkuPriceBody = {
+  skuId: string;
+  durationDays: number;
+  minQty?: number;
+  unitPrice: string;
+  currency: string;
+};
+
+type DedicatedSkuUserPriceBody = DedicatedSkuPriceBody & {
+  tenantId: string;
+  userId: string;
 };
 
 type QuoteSandboxBody = Omit<QuoteInput, 'siteId'> & {
@@ -120,6 +119,46 @@ export class PricingController {
     assertAdmin(ctx);
     const rules = normalizeRulesBody(body);
     return this.repo.upsertRules(templateId, ctx.siteId, rules);
+  }
+
+  @Get('dedicated-skus')
+  @RequireAuth()
+  listDedicatedSkuPricing(@CurrentContext() ctx: AuthenticatedContext) {
+    assertPlatformAdmin(ctx);
+    return this.repo.listDedicatedSkuPricing(ctx.siteId);
+  }
+
+  @Post('dedicated-skus/template-rules')
+  @RequireAuth()
+  upsertDedicatedSkuTemplateRule(
+    @CurrentContext() ctx: AuthenticatedContext,
+    @Body() body: DedicatedSkuPriceBody & { templateId: string },
+  ) {
+    assertPlatformAdmin(ctx);
+    const normalized = normalizeDedicatedSkuPriceBody(body);
+    if (!body.templateId) throw new AppError(ErrorCode.VALIDATION_ERROR, 'price_template_required', 400);
+    return this.repo.upsertDedicatedSkuTemplateRule({ ...normalized, templateId: body.templateId, siteId: ctx.siteId });
+  }
+
+  @Post('dedicated-skus/overrides')
+  @RequireAuth()
+  upsertDedicatedSkuOverride(@CurrentContext() ctx: AuthenticatedContext, @Body() body: DedicatedSkuPriceBody) {
+    assertPlatformAdmin(ctx);
+    return this.repo.upsertDedicatedSkuOverride({ ...normalizeDedicatedSkuPriceBody(body), siteId: ctx.siteId });
+  }
+
+  @Post('dedicated-skus/user-overrides')
+  @RequireAuth()
+  upsertUserDedicatedSkuOverride(@CurrentContext() ctx: AuthenticatedContext, @Body() body: DedicatedSkuUserPriceBody) {
+    assertAdmin(ctx);
+    if (!body.tenantId || !body.userId) throw new AppError(ErrorCode.VALIDATION_ERROR, 'user_price_target_required', 400);
+    assertTenantWriteAllowed(ctx, body.tenantId);
+    return this.repo.upsertUserDedicatedSkuOverride({
+      ...normalizeDedicatedSkuPriceBody(body),
+      siteId: ctx.siteId,
+      tenantId: body.tenantId,
+      userId: body.userId,
+    });
   }
 
   @Get('matrix')
@@ -195,70 +234,6 @@ export class PricingController {
     return this.repo.upsertUserOverride({ ...body, siteId: ctx.siteId });
   }
 
-  @Post('sku-templates/:id/rules')
-  @RequireAuth()
-  createSkuRules(
-    @CurrentContext() ctx: AuthenticatedContext,
-    @Param('id') templateId: string,
-    @Body() body: SkuPriceRulesBody,
-  ) {
-    assertAdmin(ctx);
-    const rules = normalizeSkuRulesBody(body);
-    return this.repo.upsertSkuRules(templateId, ctx.siteId, rules);
-  }
-
-  @Post('sku-overrides')
-  @RequireAuth()
-  createSkuOverride(
-    @CurrentContext() ctx: AuthenticatedContext,
-    @Body() body: SkuPriceRuleBody,
-  ) {
-    assertAdmin(ctx);
-    assertSkuPriceBody(body);
-    return this.repo.upsertSkuOverride({
-      siteId: ctx.siteId,
-      skuId: body.skuId,
-      durationDays: Number(body.durationDays),
-      unitPrice: String(body.unitPrice),
-      currency: body.currency,
-      minQty: body.minQty === undefined ? undefined : Number(body.minQty),
-    });
-  }
-
-  @Post('user-sku-overrides')
-  @RequireAuth()
-  createUserSkuOverride(
-    @CurrentContext() ctx: AuthenticatedContext,
-    @Body() body: UserSkuPriceOverrideBody,
-  ) {
-    assertAdmin(ctx);
-    assertSkuPriceBody(body);
-    if (!body.tenantId || !body.userId) {
-      throw new AppError(ErrorCode.VALIDATION_ERROR, 'user_price_target_required', 400);
-    }
-    assertTenantWriteAllowed(ctx, body.tenantId);
-    return this.repo.upsertUserSkuOverride({
-      siteId: ctx.siteId,
-      tenantId: body.tenantId,
-      userId: body.userId,
-      skuId: body.skuId,
-      durationDays: Number(body.durationDays),
-      unitPrice: String(body.unitPrice),
-      currency: body.currency,
-      minQty: body.minQty === undefined ? undefined : Number(body.minQty),
-    });
-  }
-
-  @Get('sku-rules')
-  @RequireAuth()
-  listSkuRules(
-    @CurrentContext() ctx: AuthenticatedContext,
-    @Query() query: SkuPriceRuleQuery,
-  ) {
-    assertAdmin(ctx);
-    return this.repo.listSkuRules(ctx.siteId, query);
-  }
-
   @Post('user-template-bindings')
   @RequireAuth()
   bindUserTemplate(
@@ -301,6 +276,7 @@ export class PricingController {
     @Query('quantity') quantity: string,
     @Query('currency') currency: string,
   ) {
+    assertStaticProxyPurchaseDisabled();
     return this.quoteUseCase.execute({
       siteId: ctx.siteId,
       tenantId: ctx.tenantId!,
@@ -355,34 +331,21 @@ function assertPriceBody(body: PriceOverrideBody): void {
   }
 }
 
-function normalizeSkuRulesBody(body: SkuPriceRulesBody): SkuPriceRuleBody[] {
-  const rules = 'rules' in body ? body.rules : [body];
-  if (!Array.isArray(rules) || rules.length === 0) {
-    throw new AppError(ErrorCode.VALIDATION_ERROR, 'price_rules_required', 400);
+function assertPlatformAdmin(ctx: AuthenticatedContext): void {
+  if (ctx.ownerType !== 'PLATFORM_ADMIN') {
+    throw new AppError(ErrorCode.PERMISSION_DENIED, 'insufficient_permissions', 403);
   }
-  return rules.map((rule) => {
-    assertSkuPriceBody(rule);
-    return {
-      ...rule,
-      durationDays: Number(rule.durationDays),
-      unitPrice: String(rule.unitPrice),
-      minQty: rule.minQty === undefined ? undefined : Number(rule.minQty),
-    };
-  });
 }
 
-function assertSkuPriceBody(body: SkuPriceRuleBody): void {
+function normalizeDedicatedSkuPriceBody(body: DedicatedSkuPriceBody) {
+  const durationDays = Number(body.durationDays);
+  const minQty = body.minQty === undefined ? 1 : Number(body.minQty);
   if (!body.skuId) throw new AppError(ErrorCode.VALIDATION_ERROR, 'sku_id_required', 400);
-  if (!Number.isInteger(Number(body.durationDays)) || Number(body.durationDays) < 1) {
-    throw new AppError(ErrorCode.VALIDATION_ERROR, 'duration_days_invalid', 400);
-  }
-  if (!isNonNegativeDecimalString(body.unitPrice)) {
-    throw new AppError(ErrorCode.VALIDATION_ERROR, 'unit_price_invalid', 400);
-  }
-  if (!body.currency) throw new AppError(ErrorCode.VALIDATION_ERROR, 'currency_required', 400);
-  if (body.minQty !== undefined && (!Number.isInteger(Number(body.minQty)) || Number(body.minQty) < 1)) {
-    throw new AppError(ErrorCode.VALIDATION_ERROR, 'min_qty_invalid', 400);
-  }
+  if (!Number.isInteger(durationDays) || durationDays < 1) throw new AppError(ErrorCode.VALIDATION_ERROR, 'duration_days_invalid', 400);
+  if (!Number.isInteger(minQty) || minQty < 1) throw new AppError(ErrorCode.VALIDATION_ERROR, 'min_qty_invalid', 400);
+  if (!isNonNegativeDecimalString(body.unitPrice)) throw new AppError(ErrorCode.VALIDATION_ERROR, 'unit_price_invalid', 400);
+  if (!body.currency?.trim()) throw new AppError(ErrorCode.VALIDATION_ERROR, 'currency_required', 400);
+  return { skuId: body.skuId, durationDays, minQty, unitPrice: String(body.unitPrice), currency: body.currency.trim() };
 }
 
 function assertGroupPriceBody(body: PriceableCatalogGroupOverrideBody): void {

@@ -6,14 +6,13 @@ import { AuthenticatedContext } from '../../common/auth/auth-context';
 import { AppError } from '../../common/errors/app-error';
 import { ResourcesRepository } from '../resources/resources.repository';
 import { QuoteUseCase } from '../pricing/use-cases/quote.use-case';
-import { CreateStaticProxyOrderUseCase } from '../orders/use-cases/create-static-proxy-order.use-case';
 import { OrdersRepository } from '../orders/orders.repository';
 import { ProxiesRepository } from '../proxies/proxies.repository';
 import { WalletRepository } from '../wallet/wallet.repository';
 import { RenewProxyUseCase } from '../proxies/use-cases/renew-proxy.use-case';
 import { ChangePasswordUseCase } from '../proxies/use-cases/change-password.use-case';
 import { SwitchIpUseCase } from '../proxies/use-cases/switch-ip.use-case';
-import { decodePublicId, encodePublicId, mapProxy, mapOrder, mapResource } from './res-static.mapper';
+import { decodePublicId, mapProxy, mapOrder, mapResource } from './res-static.mapper';
 import { decryptAesGcm } from '../../common/crypto/aes-gcm';
 import { ConfigService } from '../../common/config/config.service';
 import {
@@ -35,6 +34,7 @@ import {
 import { ErrorCode } from '../../common/errors/error-codes';
 import { formatProxyExport, parseProxyExportFormat } from '../proxies/proxy-export';
 import { ProxyAuditService } from '../proxies/proxy-audit.service';
+import { assertStaticProxyPurchaseDisabled } from '../orders/static-purchase-disabled';
 
 const OPENAPI_PROXY_EXPORT_LIMIT = 1000;
 const OPENAPI_RESOURCE_PAGE_SIZE = 20;
@@ -44,7 +44,6 @@ export class ResStaticController {
   constructor(
     private readonly resourcesRepo: ResourcesRepository,
     private readonly quoteUseCase: QuoteUseCase,
-    private readonly createOrderUseCase: CreateStaticProxyOrderUseCase,
     private readonly ordersRepo: OrdersRepository,
     private readonly proxiesRepo: ProxiesRepository,
     private readonly walletRepo: WalletRepository,
@@ -109,16 +108,8 @@ export class ResStaticController {
   @Post('buy')
   @HttpCode(200)
   @RequireUser()
-  async buy(@CurrentContext() ctx: AuthenticatedContext, @Body() body: BuyDto) {
-    assertBuyBody(body);
-    const result = await this.createOrderUseCase.execute(ctx, {
-      resourceId: decodePublicId('resource', body.resource_id),
-      quantity: positiveInteger(body.quantity, 'quantity'),
-      durationDays: positiveInteger(body.duration_days, 'duration_days'),
-      currency: body.currency,
-      idempotencyKey: body.idempotency_key,
-    });
-    return { order_no: encodePublicId('order', result.orderId), status: result.status };
+  async buy(@CurrentContext() _ctx: AuthenticatedContext, @Body() _body: BuyDto) {
+    assertStaticProxyPurchaseDisabled();
   }
 
   @Post('renew')
@@ -300,11 +291,6 @@ function assertCalculateBody(body: CalculateDto): void {
   positiveInteger(body.duration_days, 'duration_days');
   positiveInteger(body.quantity, 'quantity');
   requiredString(body.currency, 'currency');
-}
-
-function assertBuyBody(body: BuyDto): void {
-  assertCalculateBody(body);
-  requiredString(body.idempotency_key, 'idempotency_key');
 }
 
 function assertRenewBody(body: RenewDto): void {

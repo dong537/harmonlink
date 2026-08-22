@@ -34,5 +34,18 @@ describe('OpenAPI setup', () => {
       scheme: 'bearer',
       bearerFormat: 'JWT',
     });
+    expect(res.body.paths['/api/dedicated-lines/{id}/suspend'].post.responses['201'].content['application/json'].schema).toEqual({
+      $ref: '#/components/schemas/DedicatedLineLifecycleResultDto',
+    });
+    expect(res.body.paths['/api/dedicated-lines/{id}/resume'].post.responses['201'].content['application/json'].schema).toEqual({
+      $ref: '#/components/schemas/DedicatedLineLifecycleResultDto',
+    });
+    expect(res.body.components.schemas.DedicatedLineLifecycleResultDto.required).toEqual([
+      'lineId',
+      'status',
+      'desiredVersion',
+      'expiresAt',
+      'replayed',
+    ]);
   });
 });

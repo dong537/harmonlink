@@ -14,7 +14,6 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, unknown>) => {
-      if (key === 'customer.reseller.products.locationWithDetail') return `${params?.country} · ${params?.detail}`;
       return params?.count === undefined ? key : `${key} ${params.count}`;
     },
   }),
@@ -41,7 +40,7 @@ function renderWithQueryClient(ui: React.ReactElement) {
 }
 
 describe('ResellerProductsFeature', () => {
-  it('lists main-site resources and saves a reseller product price through the real reseller endpoint', async () => {
+  it('lists dedicated-line SKUs and saves a reseller product price through the real reseller endpoint', async () => {
     vi.mocked(userApiRequest)
       .mockResolvedValueOnce({
         page: 1,
@@ -49,19 +48,14 @@ describe('ResellerProductsFeature', () => {
         total: 1,
         items: [
           {
-            resourceId: 'res-us-ny',
-            code: 'US:NY-RECOMMENDED',
-            name: 'US-New York Recommended',
-            displayName: 'US-New York Recommended',
-            providerCode: 'IPIPD',
-            ipType: 'NATIVE',
-            protocol: 'BOTH',
+            skuId: 'sku-sv',
+            code: 'SV',
+            name: 'Short Video Dedicated Line',
+            description: 'Short-video routing contract',
             status: 'ACTIVE',
-            stock: 93,
+            availableInventory: 93,
             inventoryCapturedAt: '2026-06-13T00:00:00.000Z',
             inventoryIsStale: false,
-            upstreamCost: '9.00',
-            upstreamCostCurrency: 'CNY',
             enabled: false,
             unitPrice: null,
             currency: null,
@@ -78,11 +72,12 @@ describe('ResellerProductsFeature', () => {
 
     renderWithQueryClient(<ResellerProductsFeature />);
 
-    expect(await screen.findByText('美国 · 纽约-推荐')).toBeInTheDocument();
+    expect(await screen.findByText('Short Video Dedicated Line')).toBeInTheDocument();
+    expect(screen.getByText('SV')).toBeInTheDocument();
     expect(screen.getByText('customer.reseller.products.mainSite')).toBeInTheDocument();
     expect(screen.getByText('customer.reseller.products.sourceTruth')).toBeInTheDocument();
     expect(screen.queryByText('IPIPD')).not.toBeInTheDocument();
-    expect(screen.queryByText('9.00 CNY')).not.toBeInTheDocument();
+    expect(screen.queryByText('Short-video routing contract')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('switch'));
     fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '28' } });
@@ -92,7 +87,7 @@ describe('ResellerProductsFeature', () => {
       expect(userApiRequest).toHaveBeenCalledWith('/api/customer/reseller/products', {
         method: 'POST',
         body: JSON.stringify({
-          resourceId: 'res-us-ny',
+          skuId: 'sku-sv',
           enabled: true,
           unitPrice: '28',
           currency: 'CNY',

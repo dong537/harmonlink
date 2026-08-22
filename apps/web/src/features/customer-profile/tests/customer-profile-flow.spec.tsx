@@ -10,10 +10,16 @@ import {
 import * as client from '../../../shared/api/client';
 import { clearCurrentUserCache } from '../../../shared/auth/current-user';
 
-vi.mock('react-i18next', async () => {
-  const { createI18nStub } = await import('../../../shared/testing/i18n-stub');
-  return createI18nStub();
-});
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: string | { defaultValue?: string }) => {
+      if (typeof options === 'string') return options;
+      if (key === 'customer.profile.ownerType.USER') return 'USER';
+      if (key === 'customer.profile.scopeValue.generic') return 'customer:*';
+      return options?.defaultValue ?? key;
+    },
+  }),
+}));
 
 function renderWithQuery(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -205,8 +211,8 @@ describe('customer profile feature contracts', () => {
     renderWithQuery(<CustomerProfileFeature />);
 
     expect((await screen.findAllByText('user@example.com')).length).toBeGreaterThan(0);
-    expect(await screen.findByText('客户')).toBeInTheDocument();
-    expect(await screen.findByText('接口权限')).toBeInTheDocument();
+    expect(await screen.findByText('USER')).toBeInTheDocument();
+    expect(await screen.findByText('customer:*')).toBeInTheDocument();
     expect(await screen.findByText('Main Console')).toBeInTheDocument();
     expect(await screen.findByText('Reseller Portal')).toBeInTheDocument();
     expect(await screen.findByText('tenant-1')).toBeInTheDocument();

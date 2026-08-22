@@ -315,6 +315,10 @@ describe('admin minimum page APIs', () => {
   });
 
   it('admin order list searches real user, tenant, resource, and upstream fields', async () => {
+    await prisma.tenants.update({
+      where: { id: tenantAId },
+      data: { name: 'Searchable Tenant Alpha' },
+    });
     const { userId } = await seedUser(siteId, tenantAId, { email: 'search-order-buyer@example.com', password: PW });
     await seedUser(siteId, tenantBId, { email: 'hidden-order-buyer@example.com', password: PW });
     const resourceId = await seedResource(siteId);
@@ -347,7 +351,7 @@ describe('admin minimum page APIs', () => {
 
     const byTenant = await request
       .get('/api/orders')
-      .query({ search: 'Test Tenant 1', page: 1, pageSize: 20 })
+      .query({ search: 'Searchable Tenant Alpha', page: 1, pageSize: 20 })
       .set('Authorization', `Bearer ${token}`);
     expect(byTenant.status).toBe(200);
     expect(byTenant.body.data.items.map((item: { id: string }) => item.id)).toContain(order.id);

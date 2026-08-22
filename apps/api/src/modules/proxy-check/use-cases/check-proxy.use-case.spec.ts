@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { randomBytes } from 'node:crypto';
 import { AuthenticatedContext } from '../../../common/auth/auth-context';
 import { ErrorCode } from '../../../common/errors/error-codes';
 import { AppError } from '../../../common/errors/app-error';
@@ -8,7 +9,7 @@ import { ProxiesRepository, ProxyInstance } from '../../proxies/proxies.reposito
 import { ProbeOutcome, ProxyProber } from '../proxy-prober';
 import { CheckProxyUseCase } from './check-proxy.use-case';
 
-const ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+const ENCRYPTION_KEY = randomBytes(32).toString('hex');
 
 const auditCreate = vi.fn();
 vi.mock('@ipeasy/db', () => ({
