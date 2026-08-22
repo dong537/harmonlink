@@ -5,6 +5,9 @@ import { ErrorCode } from '../../common/errors/error-codes';
 import { SkuQuoteUseCase, type SkuQuoteSource, type ServiceSku } from '../catalog/domain';
 import { CreateDedicatedLineOrderUseCase } from './create-dedicated-line-order.use-case';
 import type { DedicatedLineInventoryRepository } from './dedicated-line-inventory.repository';
+import type { DedicatedLinePlacementRepository } from './dedicated-line-placement.repository';
+import type { DedicatedLineOrderJob } from './dedicated-line-order.repository';
+import { parseRequest } from './process-dedicated-line-order.use-case';
 import {
   ReserveDedicatedLineStockUseCase,
   type InventoryReservationSource,
@@ -70,6 +73,21 @@ function inventoryRepo(route: unknown): DedicatedLineInventoryRepository {
   return { findFreshRoute: vi.fn().mockResolvedValue(route) } as unknown as DedicatedLineInventoryRepository;
 }
 
+const placementPlan = {
+  policyId: 'policy-1',
+  inboundProfileId: 'profile-1',
+  inboundTag: 'in-hk-1',
+  protocol: 'VLESS' as const,
+  targetReplicaCount: 2,
+  minReadyReplicaCount: 1,
+  maxUnitsPerNode: 10,
+  allowedNodeIds: ['node-1', 'node-2'],
+};
+
+function placementRepo(plan: unknown = placementPlan): DedicatedLinePlacementRepository {
+  return { resolveForOrder: vi.fn().mockResolvedValue(plan) } as unknown as DedicatedLinePlacementRepository;
+}
+
 const freshRoute = {
   providerCode: 'OPENUI',
   providerAccountId: 'acct-1',
@@ -84,6 +102,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
         { source: 'USER_OVERRIDE', candidates: [{ unitPrice: '13.50', currency: 'CNY', source: 'USER_OVERRIDE' }], hasCurrencyMismatch: false },
       ])),
       inventoryRepo(freshRoute),
+      placementRepo(),
       new ReserveDedicatedLineStockUseCase(source),
     );
 
@@ -111,6 +130,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
         { source: 'SITE_DEFAULT_TEMPLATE', candidates: [{ unitPrice: '0.07', currency: 'CNY', source: 'SITE_DEFAULT_TEMPLATE' }], hasCurrencyMismatch: false },
       ])),
       inventoryRepo(freshRoute),
+      placementRepo(),
       new ReserveDedicatedLineStockUseCase(source),
     );
 
@@ -124,6 +144,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
     const useCase = new CreateDedicatedLineOrderUseCase(
       new SkuQuoteUseCase(quoteSource([])),
       inventoryRepo(freshRoute),
+      placementRepo(),
       new ReserveDedicatedLineStockUseCase(source),
     );
 
@@ -140,6 +161,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
         { source: 'SITE_DEFAULT_TEMPLATE', candidates: [{ unitPrice: '13.50', currency: 'CNY', source: 'SITE_DEFAULT_TEMPLATE' }], hasCurrencyMismatch: false },
       ])),
       inventoryRepo(null),
+      placementRepo(),
       new ReserveDedicatedLineStockUseCase(source),
     );
 
@@ -166,6 +188,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
         { source: 'SITE_DEFAULT_TEMPLATE', candidates: [{ unitPrice: '13.50', currency: 'CNY', source: 'SITE_DEFAULT_TEMPLATE' }], hasCurrencyMismatch: false },
       ])),
       inventoryRepo(freshRoute),
+      placementRepo(),
       new ReserveDedicatedLineStockUseCase(source),
     );
 
@@ -178,12 +201,64 @@ describe('CreateDedicatedLineOrderUseCase', () => {
     expect(reserved.charge.idempotencyKey).toBe('dedicated_line_order:order-key-1');
   });
 
+  it('emits a job request the worker can parse, so a paid order never strands on payload validation', async () => {
+    const source = reservationSource();
+    const useCase = new CreateDedicatedLineOrderUseCase(
+      new SkuQuoteUseCase(quoteSource([
+        { source: 'SITE_DEFAULT_TEMPLATE', candidates: [{ unitPrice: '13.50', currency: 'CNY', source: 'SITE_DEFAULT_TEMPLATE' }], hasCurrencyMismatch: false },
+      ])),
+      inventoryRepo(freshRoute),
+      placementRepo(),
+      new ReserveDedicatedLineStockUseCase(source),
+    );
+
+    await useCase.execute(ctx, input);
+
+    const reserved = source.reserveAndEnqueue.mock.calls[0]![0] as ReserveDedicatedLineStockInput;
+    // Mirrors dedicated-line-inventory.repository.ts: jobPayload is nested under
+    // `request` with providerResourceId injected from the inventory snapshot.
+    const job = {
+      payload: {
+        request: { ...reserved.jobPayload, providerResourceId: freshRoute.providerResourceId },
+      },
+    } as unknown as DedicatedLineOrderJob;
+
+    const parsed = parseRequest(job);
+
+    expect(parsed.durationDays).toBe(30);
+    expect(parsed.currency).toBe('CNY');
+    expect(parsed.protocol).toBe('SOCKS5');
+    expect(parsed.placementPolicyId).toBe('policy-1');
+    expect(parsed.inboundProfileId).toBe('profile-1');
+    expect(parsed.inboundTag).toBe('in-hk-1');
+    expect(parsed.lineProtocol).toBe('VLESS');
+    expect(parsed.maxReplicaFanout).toBe(2);
+  });
+
+  it('resolves placement before charging, so an unsatisfiable policy cannot strand a reservation', async () => {
+    const source = reservationSource();
+    const useCase = new CreateDedicatedLineOrderUseCase(
+      new SkuQuoteUseCase(quoteSource([
+        { source: 'SITE_DEFAULT_TEMPLATE', candidates: [{ unitPrice: '13.50', currency: 'CNY', source: 'SITE_DEFAULT_TEMPLATE' }], hasCurrencyMismatch: false },
+      ])),
+      inventoryRepo(freshRoute),
+      { resolveForOrder: vi.fn().mockRejectedValue(new AppError(ErrorCode.VALIDATION_ERROR, 'placement_policy_missing', 422)) } as unknown as DedicatedLinePlacementRepository,
+      new ReserveDedicatedLineStockUseCase(source),
+    );
+
+    await expect(useCase.execute(ctx, input)).rejects.toMatchObject({
+      reasonKey: 'placement_policy_missing',
+    });
+    expect(source.reserveAndEnqueue).not.toHaveBeenCalled();
+  });
+
   it('rejects a non-user caller before any pricing or reservation work', async () => {
     const source = reservationSource();
     const quote = quoteSource([]);
     const useCase = new CreateDedicatedLineOrderUseCase(
       new SkuQuoteUseCase(quote),
       inventoryRepo(freshRoute),
+      placementRepo(),
       new ReserveDedicatedLineStockUseCase(source),
     );
 
@@ -200,6 +275,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
     const useCase = new CreateDedicatedLineOrderUseCase(
       new SkuQuoteUseCase(quote),
       inventoryRepo(freshRoute),
+      placementRepo(),
       new ReserveDedicatedLineStockUseCase(source),
     );
 

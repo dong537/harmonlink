@@ -242,6 +242,45 @@ describe('ProcessDedicatedLineOrderUseCase', () => {
     expect(new Set(exits.map((exit) => exit.identityFingerprint)).size).toBe(2);
   });
 
+  it('keeps the reservation when persistence fails after the upstream purchase, so a paid line is never refunded', async () => {
+    const adapter = adapterMock();
+    const { useCase, jobs } = createHarness(adapter, {
+      persistCompletedOrder: vi
+        .fn()
+        .mockRejectedValue(new AppError(ErrorCode.UPSTREAM_OUT_OF_STOCK, 'stock_reservation_expired', 422)),
+    });
+
+    await useCase.execute('job-1');
+
+    expect(adapter.buyStaticProxy).toHaveBeenCalled();
+    expect(jobs.markFailed).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      String(ErrorCode.UPSTREAM_OUT_OF_STOCK),
+      expect.anything(),
+      { retry: true, releaseReservation: false },
+    );
+  });
+
+  it('releases the reservation when a pre-purchase payload error occurs, without retrying a deterministic failure', async () => {
+    const adapter = adapterMock();
+    const job = jobRecord();
+    const payload = job.payload as Record<string, unknown>;
+    delete (payload['request'] as Record<string, unknown>)['protocol'];
+    const { useCase, jobs } = createHarness(adapter, { claimRunnableJob: vi.fn().mockResolvedValue(job) });
+
+    await useCase.execute('job-1');
+
+    expect(adapter.buyStaticProxy).not.toHaveBeenCalled();
+    expect(jobs.markFailed).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      String(ErrorCode.VALIDATION_ERROR),
+      expect.anything(),
+      { retry: false, releaseReservation: true },
+    );
+  });
+
   it('keeps encryption keys and provider secrets out of persisted plaintext and failure details', async () => {
     const adapter = adapterMock();
     const { useCase, jobs } = createHarness(adapter);

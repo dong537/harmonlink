@@ -5,6 +5,7 @@ import { ErrorCode } from '../../common/errors/error-codes';
 import { SkuQuoteUseCase } from '../catalog/domain';
 import { requireTenantId } from '../wallet/access';
 import { DedicatedLineInventoryRepository } from './dedicated-line-inventory.repository';
+import { DedicatedLinePlacementRepository } from './dedicated-line-placement.repository';
 import { ReserveDedicatedLineStockUseCase } from './domain';
 
 export interface CreateDedicatedLineOrderInput {
@@ -39,6 +40,7 @@ export class CreateDedicatedLineOrderUseCase {
   constructor(
     private readonly quote: SkuQuoteUseCase,
     private readonly inventory: DedicatedLineInventoryRepository,
+    private readonly placement: DedicatedLinePlacementRepository,
     private readonly reserveStock: ReserveDedicatedLineStockUseCase,
   ) {}
 
@@ -77,6 +79,17 @@ export class CreateDedicatedLineOrderUseCase {
       });
     }
 
+    // Placement authority: line_placement_policies. Resolved here, before any
+    // money moves, so a missing or unsatisfiable policy fails the request with a
+    // 422 instead of stranding a paid reservation in the worker.
+    const plan = await this.placement.resolveForOrder({
+      siteId: ctx.siteId,
+      tenantId,
+      userId: ctx.ownerId,
+      skuId: quote.skuId,
+      quantity: quote.quantity,
+    });
+
     const reservation = await this.reserveStock.execute({
       siteId: ctx.siteId,
       tenantId,
@@ -105,11 +118,14 @@ export class CreateDedicatedLineOrderUseCase {
         idempotencyKey: `dedicated_line_order:${idempotencyKey}`,
       },
       jobPayload: {
-        skuCode: quote.skuCode,
-        countryCode,
         durationDays: quote.durationDays,
-        quantity: quote.quantity,
-        contractVersion: quote.contractVersion,
+        currency: quote.currency,
+        protocol: 'SOCKS5',
+        placementPolicyId: plan.policyId,
+        inboundProfileId: plan.inboundProfileId,
+        inboundTag: plan.inboundTag,
+        lineProtocol: plan.protocol,
+        maxReplicaFanout: plan.targetReplicaCount,
         ...(input.regionCode?.trim() ? { regionCode: input.regionCode.trim() } : {}),
         ...(input.businessType?.trim() ? { businessType: input.businessType.trim() } : {}),
       },

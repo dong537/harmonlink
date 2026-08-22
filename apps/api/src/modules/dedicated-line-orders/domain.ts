@@ -1,6 +1,32 @@
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
 
+/**
+ * Authoritative shape of `external_jobs.payload.request` for dedicated-line
+ * orders. The producer (CreateDedicatedLineOrderUseCase) builds every field
+ * except `providerResourceId`, which the inventory repository injects from the
+ * route snapshot at enqueue time. The consumer
+ * (ProcessDedicatedLineOrderUseCase) parses back exactly this shape.
+ *
+ * `protocol` is the upstream egress protocol we purchase; `lineProtocol` is the
+ * customer-facing inbound protocol the projection serves. They are unrelated.
+ */
+export type DedicatedLineOrderRequest = {
+  durationDays: number;
+  currency: string;
+  protocol: 'SOCKS5';
+  providerResourceId: string;
+  placementPolicyId: string;
+  inboundProfileId: string;
+  inboundTag: string;
+  lineProtocol: 'VLESS' | 'VMESS' | 'MIXED';
+  maxReplicaFanout: number;
+  regionCode?: string;
+  businessType?: string;
+};
+
+export type DedicatedLineOrderRequestDraft = Omit<DedicatedLineOrderRequest, 'providerResourceId'>;
+
 export interface ReserveDedicatedLineStockInput {
   siteId: string;
   tenantId: string;
@@ -28,7 +54,7 @@ export interface ReserveDedicatedLineStockInput {
     currency: string;
     idempotencyKey: string;
   };
-  jobPayload: Record<string, unknown>;
+  jobPayload: DedicatedLineOrderRequestDraft;
 }
 
 export type InventoryLowAlert = {

@@ -13,26 +13,13 @@ import {
   exitIdentityFingerprint,
 } from './dedicated-line-order.repository';
 import { managedLineProjectionDesiredHash } from '../dedicated-line-projections/domain';
+import type { DedicatedLineOrderRequest } from './domain';
 
 export type DedicatedLineOrderExecutionResult =
   | { status: 'NOOP'; jobId: string }
   | { status: 'COMPLETED'; jobId: string; reservationId: string; exits: number }
   | { status: 'RETRYING'; jobId: string; attempts: number; upstreamOrderId: string }
   | { status: 'NEEDS_OPERATOR'; jobId: string; error: string };
-
-type DedicatedLineOrderRequest = {
-  durationDays: number;
-  currency: string;
-  protocol: 'SOCKS5';
-  providerResourceId: string;
-  placementPolicyId: string;
-  inboundProfileId: string;
-  inboundTag: string;
-  lineProtocol: 'VLESS' | 'VMESS' | 'MIXED';
-  maxReplicaFanout: number;
-  regionCode?: string;
-  businessType?: string;
-};
 
 @Injectable()
 export class ProcessDedicatedLineOrderUseCase {
@@ -46,6 +33,10 @@ export class ProcessDedicatedLineOrderUseCase {
     const job = await this.jobs.claimRunnableJob(jobId, workerId);
     if (!job) return { status: 'NOOP', jobId };
 
+    // Whether we have handed a purchase/query request to the upstream provider.
+    // Once true, the reservation must never be released on failure: the upstream
+    // resource may already be paid for, so refunding would lose money silently.
+    let upstreamCallIssued = false;
     try {
       const request = parseRequest(job);
       const providerCode = requiredString(job.payload, 'providerCode') as ProviderCode;
@@ -84,6 +75,7 @@ export class ProcessDedicatedLineOrderUseCase {
         businessType: request.businessType,
         idempotencyKey: job.dedupeKey,
       };
+      upstreamCallIssued = true;
       const result = upstreamOrderId
         ? await adapter.queryOrder({ upstreamOrderId, protocol: request.protocol, countryCode }, config)
         : await adapter.buyStaticProxy(buyInput, config);
@@ -138,13 +130,19 @@ export class ProcessDedicatedLineOrderUseCase {
     } catch (error: unknown) {
       const detail = errorContext(error);
       const code = error instanceof AppError ? error.code : ErrorCode.UPSTREAM_ERROR;
-      const isKnownNoPurchaseFailure = code === ErrorCode.UPSTREAM_OUT_OF_STOCK || code === ErrorCode.UPSTREAM_DISABLED;
+      // Nothing was purchased, so the customer must get their money and the
+      // stock back. Enumerating "known safe" error codes is what let a payload
+      // VALIDATION_ERROR strand paid-for reservations: any new pre-purchase
+      // failure was silently treated as post-purchase. Position in the flow is
+      // the real signal, not the error code.
+      const releaseReservation = !upstreamCallIssued;
+      const isTransientFailure = code === ErrorCode.UPSTREAM_OUT_OF_STOCK || code === ErrorCode.UPSTREAM_DISABLED;
       const status = await this.jobs.markFailed(
         job,
         workerId,
         String(code),
         detail,
-        { retry: isKnownNoPurchaseFailure, releaseReservation: isKnownNoPurchaseFailure },
+        { retry: isTransientFailure, releaseReservation },
       );
       return {
         status: status === 'RETRYING' ? 'RETRYING' : 'NEEDS_OPERATOR',
@@ -155,7 +153,7 @@ export class ProcessDedicatedLineOrderUseCase {
   }
 }
 
-function parseRequest(payload: DedicatedLineOrderJob): DedicatedLineOrderRequest {
+export function parseRequest(payload: DedicatedLineOrderJob): DedicatedLineOrderRequest {
   const request = asJsonObject(asJsonObject(payload.payload)['request']);
   const protocol = requiredString(request, 'protocol');
   if (protocol !== 'SOCKS5') throw new AppError(ErrorCode.VALIDATION_ERROR, 'dedicated_line_requires_socks5', 400);

@@ -124,3 +124,27 @@ integrations/payments/
 - smoke 的 verified observation 只有在 `freshUntil` 仍有效且观测国家与专线 `countryCode` 精确匹配时才可推进；过期证据必须重新探测，国家不符只记录失败证据。
 - 路由导入重放除 source fingerprint 外，还必须与已持久化 route 的 migration id 和 stage 完全一致；目标投影就绪推进必须覆盖迁移 TARGET 节点的全部 projection link，缺失或重复关系不得推进。
 - 迁移取消、路由导入、smoke observation 和 cleanup 完成必须在各自状态写入的同一事务内记录 `audit_logs`；取消状态更新必须使用原 `phase + status` 做 compare-and-set。幂等回放不得重复写审计，smoke 在远端调用期间遭遇并发状态变化时应记录证据及 `transitionApplied=false`，不得伪造推进成功。
+
+## 跨异步边界的 payload 契约
+
+生产者入队、消费者出队解析时，payload 是一个真实 Interface，但 TypeScript 检查
+不到它 —— 中间经过 Prisma JSON 序列化，类型在此处断开。
+
+规则：
+
+- 该 payload 的类型必须在 `domain.ts` 中定义并导出，由生产者和消费者共同 import。
+  禁止消费者本地 `type X = {...}` 私有声明；那不是契约，只是消费者的一厢愿望。
+- 消费者的解析函数（如 `parseRequest`）必须导出。它就是契约本身，是测试 surface。
+- 必须有一个契约测试：把生产者真实产出的 payload 喂给消费者真实的解析函数。
+  只有 typecheck 通过不能证明契约成立。
+- 入队 payload 只放消费者真正会读的字段。生产者已在顶层写入的字段
+  （`countryCode`、`quantity`、`skuId` 等）不要在嵌套 `request` 里重复一份，
+  否则两份会各自漂移。
+
+反例（本仓库真实缺陷）：`CreateDedicatedLineOrderUseCase` 入队时缺 5 个
+placement 字段，`ProcessDedicatedLineOrderUseCase.parseRequest` 直接抛
+`dedicated_line_protocol_required`。钱已扣、库存已锁，订单 100% 失败，
+且 typecheck 与全部单测均为绿。
+
+同时：下单期需要的权威解析（如 placement policy）必须在扣款前完成，让不可满足的
+配置以 422 拒绝请求，而不是把已付款的预留丢给 worker 才发现。

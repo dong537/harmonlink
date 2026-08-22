@@ -28,7 +28,16 @@ const input: ReserveDedicatedLineStockInput = {
     contractVersion: 1,
   },
   charge: { amount: '20', currency: 'CNY', idempotencyKey: 'debit-order-1' },
-  jobPayload: { requestedBy: 'customer', durationDays: 30 },
+  jobPayload: {
+    durationDays: 30,
+    currency: 'CNY',
+    protocol: 'SOCKS5',
+    placementPolicyId: 'policy-1',
+    inboundProfileId: 'profile-1',
+    inboundTag: 'in-1',
+    lineProtocol: 'VLESS',
+    maxReplicaFanout: 2,
+  },
 };
 
 function source(overrides: Partial<InventoryReservationSource> = {}): InventoryReservationSource {

@@ -314,3 +314,85 @@ if (latest && !latest.isStale && latest.stock === 0) {
 if (latest && !latest.isStale) return latest;
 await syncInventory.execute(siteId, providerCode, tenantId);
 ```
+
+---
+
+## Scenario: Reservation Release After a Failed Fulfillment Job
+
+### 1. Scope / Trigger
+
+- Trigger: any worker job that charges a customer, holds stock, then calls a
+  paid upstream provider. First seen in `ProcessDedicatedLineOrderUseCase`.
+- Applies to every `markFailed(..., { retry, releaseReservation })` call site.
+
+### 2. Signatures
+
+- `markFailed(job, workerId, code, detail, { retry: boolean; releaseReservation: boolean })`
+- `releaseReservation: true` refunds the wallet charge and returns the stock.
+
+### 3. Contracts
+
+- `retry` and `releaseReservation` are independent axes and must be computed
+  separately. `retry` answers "is this failure transient?"; `releaseReservation`
+  answers "was the upstream purchase already issued?". Never assign one from the
+  other.
+- `releaseReservation` MUST be derived from position in the flow, using a flag
+  set immediately before the first upstream call, not from the error code:
+
+  ```ts
+  let upstreamCallIssued = false;
+  // ...
+  upstreamCallIssued = true;
+  const result = await adapter.buyStaticProxy(input, config);
+  // ...
+  const releaseReservation = !upstreamCallIssued;
+  ```
+
+- Failures raised after the upstream call — including from the persistence
+  transaction — MUST NOT release. A rolled-back transaction does not roll back
+  the provider's charge.
+
+### 4. Validation & Error Matrix
+
+| Failure position | Example | releaseReservation |
+| --- | --- | --- |
+| Pre-purchase payload/config | `VALIDATION_ERROR` missing `protocol` | `true` |
+| Pre-purchase gate | `UPSTREAM_DISABLED` allowlist reject | `true` |
+| Post-purchase delivery check | exit country mismatch | `false` |
+| Post-purchase persistence | `stock_reservation_expired` | `false` |
+
+### 5. Good/Base/Bad Cases
+
+- Good: a new pre-purchase validation branch is added and the customer is
+  refunded with no code change to the catch block.
+- Base: a transient `UPSTREAM_DISABLED` releases and retries.
+- Bad: an error-code allowlist decides release, so any unlisted pre-purchase
+  failure silently strands a paid reservation.
+
+### 6. Tests Required
+
+- A pre-purchase payload error releases and does not retry, asserting the
+  provider adapter was never called.
+- A post-purchase persistence rejection keeps the reservation, asserting the
+  adapter *was* called.
+- Both tests must fail if release is computed from the error code.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const isKnownNoPurchaseFailure = code === ErrorCode.UPSTREAM_OUT_OF_STOCK || code === ErrorCode.UPSTREAM_DISABLED;
+const releaseReservation = isKnownNoPurchaseFailure;
+const isTransientFailure = isKnownNoPurchaseFailure;
+```
+
+Enumerating "known safe" codes inverts by default: every new pre-purchase error
+is treated as post-purchase and strands the customer's money.
+
+#### Correct
+
+```ts
+const releaseReservation = !upstreamCallIssued;
+const isTransientFailure = code === ErrorCode.UPSTREAM_OUT_OF_STOCK || code === ErrorCode.UPSTREAM_DISABLED;
+```
