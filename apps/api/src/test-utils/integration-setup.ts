@@ -373,12 +373,38 @@ function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+/**
+ * These helpers TRUNCATE every table, so they must never reach a database
+ * anyone cares about. vitest.integration.config.ts already refuses to start
+ * without DATABASE_URL_TEST, but this module is also importable directly, so it
+ * enforces the same rule itself rather than trusting the runner's injection.
+ */
+function resolveDisposableDatabaseUrl(): string {
+  const url = process.env['DATABASE_URL_TEST'] ?? process.env['DATABASE_URL'];
+  if (!url) {
+    throw new Error(
+      'DATABASE_URL_TEST is required for integration helpers. These specs TRUNCATE all tables, ' +
+        'so they refuse to guess. Point it at a disposable database, e.g. ' +
+        'DATABASE_URL_TEST="postgresql://postgres:postgres@127.0.0.1:5432/ipeasy_test"',
+    );
+  }
+  const host = new URL(url).hostname;
+  const isLoopback = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  if (!isLoopback) {
+    throw new Error(
+      `Refusing to run TRUNCATE-based integration helpers against non-loopback host "${host}". ` +
+        'Set DATABASE_URL_TEST to a local disposable database.',
+    );
+  }
+  return url;
+}
+
 const defaultTestConfig: EnvConfig = {
   NODE_ENV: 'test',
   RELEASE_GIT_SHA: '0'.repeat(40),
   PORT: 3000,
   SCHEMA_DIAGNOSTIC_TOKEN: '',
-  DATABASE_URL: process.env['DATABASE_URL'] ?? process.env['DATABASE_URL_TEST'] ?? '',
+  DATABASE_URL: resolveDisposableDatabaseUrl(),
   REDIS_URL: process.env['REDIS_URL'] ?? 'redis://localhost:6379',
   APP_ENCRYPTION_KEY: process.env['APP_ENCRYPTION_KEY'] ?? '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
   JWT_SECRET: process.env['JWT_SECRET'] ?? 'integration-test-jwt-secret',
