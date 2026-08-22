@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "AppError/ErrorCode 使用规范，本任务涉及错误码语义与 releaseReservation 判定反转"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "预留/扣款/入队在单事务内，需遵守事务与 Prisma 访问规范"}
+{"file": ".trellis/spec/architecture.md", "reason": "模块边界与 use-case/repository 分层，决定 resolveForOrder 接线位置"}
+{"file": "docs/architecture/专线平台全流程.md", "reason": "本缺陷的完整分析与字段来源核实结论"}
