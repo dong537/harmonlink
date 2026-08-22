@@ -12,6 +12,8 @@ import { FulfillmentRepository } from '../../fulfillment/fulfillment.repository'
 import { isUniqueConstraintError } from '../../../common/errors/prisma-errors';
 import { UsersRepository } from '../../users/users.repository';
 import { requiredAdminReason } from '../admin-reason';
+import { ConfigService } from '../../../common/config/config.service';
+import { assertStaticProxyPurchaseEnabled } from '../static-purchase-disabled';
 
 export interface CreateStaticProxyOrderInput {
   resourceId: string;
@@ -53,9 +55,11 @@ export class CreateStaticProxyOrderUseCase {
     private readonly ordersRepo: OrdersRepository,
     private readonly fulfillmentRepo: FulfillmentRepository,
     private readonly usersRepo: UsersRepository,
+    private readonly config: ConfigService,
   ) {}
 
   async execute(ctx: AuthenticatedContext, input: CreateStaticProxyOrderInput) {
+    this.assertEnabled();
     if (ctx.ownerType !== 'USER') {
       throw new AppError(ErrorCode.PERMISSION_DENIED, 'USER_ONLY', 403);
     }
@@ -80,6 +84,7 @@ export class CreateStaticProxyOrderUseCase {
     targetUserId: string,
     input: AdminCreateStaticProxyOrderInput,
   ) {
+    this.assertEnabled();
     if (ctx.ownerType !== 'PLATFORM_ADMIN' && ctx.ownerType !== 'TENANT_ADMIN') {
       throw new AppError(ErrorCode.PERMISSION_DENIED, 'admin_only', 403);
     }
@@ -103,6 +108,10 @@ export class CreateStaticProxyOrderUseCase {
         meta: { targetUserId: targetUser.id },
       },
     );
+  }
+
+  private assertEnabled(): void {
+    assertStaticProxyPurchaseEnabled(this.config.get('LEGACY_STATIC_PROXY_ENABLED'));
   }
 
   private async createForBuyer(

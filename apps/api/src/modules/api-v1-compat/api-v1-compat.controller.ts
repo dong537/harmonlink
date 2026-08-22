@@ -61,7 +61,7 @@ export class ApiV1CompatController {
   @Get('settings/capabilities')
   capabilities() {
     this.assertEnabled();
-    return toCapabilitiesResponse();
+    return toCapabilitiesResponse(this.config.get('LEGACY_STATIC_PROXY_ENABLED') === 'true');
   }
 
   @Post('auth/login')

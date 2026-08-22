@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { AuthenticatedContext, requireUserContext } from '../../common/auth/auth-context';
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
@@ -37,6 +37,8 @@ export interface CreateDedicatedLineOrderResult {
 
 @Injectable()
 export class CreateDedicatedLineOrderUseCase {
+  private readonly logger = new Logger(CreateDedicatedLineOrderUseCase.name);
+
   constructor(
     private readonly quote: SkuQuoteUseCase,
     private readonly inventory: DedicatedLineInventoryRepository,
@@ -73,6 +75,14 @@ export class CreateDedicatedLineOrderUseCase {
       countryCode,
     });
     if (!route) {
+      await this.alertNoUsableRoute({
+        siteId: ctx.siteId,
+        tenantId,
+        userId: ctx.ownerId,
+        skuId: quote.skuId,
+        countryCode,
+        requestedQuantity: quote.quantity,
+      });
       throw new AppError(ErrorCode.UPSTREAM_OUT_OF_STOCK, 'dedicated_line_inventory_unavailable', 422, undefined, {
         skuCode: quote.skuCode,
         countryCode,
@@ -146,6 +156,34 @@ export class CreateDedicatedLineOrderUseCase {
       contractVersion: quote.contractVersion,
       replayed: reservation.replayed,
     };
+  }
+
+  // Admin-facing alert for a total inventory outage, enqueued through the outbox so no
+  // HTTP call happens on the request path. A failing enqueue is logged at error level
+  // and deliberately not rethrown: the caller must still receive the truthful 422
+  // out-of-stock answer rather than a 500 caused by the alerting side channel.
+  private async alertNoUsableRoute(scope: {
+    siteId: string;
+    tenantId: string;
+    userId: string;
+    skuId: string;
+    countryCode: string;
+    requestedQuantity: number;
+  }): Promise<void> {
+    try {
+      await this.inventory.enqueueInventoryLowAlert({
+        ...scope,
+        providerCode: null,
+        providerAccountId: null,
+        availableQuantity: 0,
+        sourceVersion: null,
+      });
+    } catch (error: unknown) {
+      this.logger.error(
+        `inventory_low_alert_enqueue_failed site=${scope.siteId} sku=${scope.skuId} country=${scope.countryCode}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
   }
 }
 

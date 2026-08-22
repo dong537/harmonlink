@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { toCapabilitiesResponse, toLegacyLineDto, toLegacySkuDto } from './api-v1-compat.mapper';
 
 describe('api v1 compatibility mappers', () => {
-  it('exposes dedicated-only capability flags', () => {
-    expect(toCapabilitiesResponse()).toEqual({
+  it('exposes dedicated-only capability flags while the legacy static proxy path is disabled', () => {
+    expect(toCapabilitiesResponse(false)).toEqual({
       smtpConfigured: false,
       otpLoginEnabled: false,
       residentialUiEnabled: false,
@@ -11,6 +11,14 @@ describe('api v1 compatibility mappers', () => {
       dedicatedUiEnabled: true,
       dedicatedPurchaseEnabled: true,
       selfServiceRechargeEnabled: false,
+    });
+  });
+
+  it('re-advertises the residential capability when the legacy switch is turned back on', () => {
+    expect(toCapabilitiesResponse(true)).toMatchObject({
+      residentialUiEnabled: true,
+      residentialPurchaseEnabled: true,
+      dedicatedPurchaseEnabled: true,
     });
   });
 

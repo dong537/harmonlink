@@ -23,12 +23,12 @@ export type CompatLine = {
   legacyRemark?: string | null;
 };
 
-export function toCapabilitiesResponse() {
+export function toCapabilitiesResponse(residentialPurchaseEnabled: boolean) {
   return {
     smtpConfigured: false,
     otpLoginEnabled: false,
-    residentialUiEnabled: false,
-    residentialPurchaseEnabled: false,
+    residentialUiEnabled: residentialPurchaseEnabled,
+    residentialPurchaseEnabled,
     dedicatedUiEnabled: true,
     dedicatedPurchaseEnabled: true,
     selfServiceRechargeEnabled: false,

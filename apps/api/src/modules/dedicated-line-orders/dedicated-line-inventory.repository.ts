@@ -4,6 +4,7 @@ import { prisma } from '@ipeasy/db';
 import { Prisma } from '@ipeasy/db/generated/client';
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { BARK_INVENTORY_LOW_TOPIC } from '../alerts/bark-alert-outbox.repository';
 import type { InventoryItem, ProviderCode } from '../providers/provider.types';
 import { inventoryFreshnessTtlSeconds } from '../resources/inventory-freshness';
 import { WalletRepository } from '../wallet/wallet.repository';
@@ -17,7 +18,6 @@ import {
 
 const RESERVATION_TTL_MS = 5 * 60 * 1000;
 const PROVIDER_ORDER_JOB_KIND = 'PROVIDER_DEDICATED_LINE_ORDER';
-const BARK_INVENTORY_LOW_TOPIC = 'alerts.bark.inventory_low';
 
 @Injectable()
 export class DedicatedLineInventoryRepository implements InventoryReservationSource {
@@ -303,10 +303,15 @@ export class DedicatedLineInventoryRepository implements InventoryReservationSou
 
   async enqueueInventoryLowAlert(alert: InventoryLowAlert): Promise<void> {
     const version = alert.sourceVersion ?? 'missing';
+    // outbox_events.aggregateId is non-nullable and the "no usable route" path has no
+    // provider account to point at. The namespaced sku fallback keeps the id non-null
+    // and impossible to confuse with a real providerAccountId, so the dedupe key stays
+    // unchanged for the routed path and distinct for the unrouted one.
+    const aggregateId = alert.providerAccountId ?? `sku:${alert.skuId}`;
     const eventKey = stableKey(
       'inventory-low',
       alert.siteId,
-      alert.providerAccountId,
+      aggregateId,
       alert.skuId,
       alert.countryCode,
       version,
@@ -319,7 +324,7 @@ export class DedicatedLineInventoryRepository implements InventoryReservationSou
           userId: alert.userId,
           topic: BARK_INVENTORY_LOW_TOPIC,
           aggregateType: 'dedicated_line_inventory',
-          aggregateId: alert.providerAccountId,
+          aggregateId,
           desiredVersion: 1,
           idempotencyKey: eventKey,
           dedupeKey: eventKey,

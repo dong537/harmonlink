@@ -9,7 +9,8 @@ import { PricingMatrixQuery, PricingMatrixSummaryQuery, PricingRepository } from
 import { QuoteInput } from './domain';
 import { QuoteUseCase } from './use-cases/quote.use-case';
 import { ResourcesRepository } from '../resources/resources.repository';
-import { assertStaticProxyPurchaseDisabled } from '../orders/static-purchase-disabled';
+import { assertStaticProxyPurchaseEnabled } from '../orders/static-purchase-disabled';
+import { ConfigService } from '../../common/config/config.service';
 
 type CreateTemplateBody = {
   name: string;
@@ -79,6 +80,7 @@ export class PricingController {
     private readonly repo: PricingRepository,
     private readonly resourcesRepo: ResourcesRepository,
     private readonly quoteUseCase: QuoteUseCase,
+    private readonly config: ConfigService,
   ) {}
 
   @Get('templates')
@@ -276,7 +278,7 @@ export class PricingController {
     @Query('quantity') quantity: string,
     @Query('currency') currency: string,
   ) {
-    assertStaticProxyPurchaseDisabled();
+    assertStaticProxyPurchaseEnabled(this.config.get('LEGACY_STATIC_PROXY_ENABLED'));
     return this.quoteUseCase.execute({
       siteId: ctx.siteId,
       tenantId: ctx.tenantId!,

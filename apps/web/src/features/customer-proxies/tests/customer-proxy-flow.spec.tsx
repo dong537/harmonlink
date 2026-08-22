@@ -155,7 +155,13 @@ beforeEach(() => {
   } as unknown as CSSStyleDeclaration));
 });
 
-function resolveCustomerShellRequest(path: string) {
+function resolveCustomerShellRequest(path: string, options?: { staticProxyPurchaseEnabled?: boolean }) {
+  if (path === '/api/sites/current') {
+    return Promise.resolve({
+      site: { name: 'test-site' },
+      features: { staticProxyPurchaseEnabled: options?.staticProxyPurchaseEnabled === true },
+    });
+  }
   if (path === '/api/auth/me') {
     return Promise.resolve({
       ownerId: 'user-1',
@@ -2329,7 +2335,7 @@ describe('customer proxy flow contracts', () => {
 
   it('keeps batch lifecycle actions disabled until proxies are selected', async () => {
     vi.spyOn(client, 'userApiRequest').mockImplementation((path) => {
-      const shell = resolveCustomerShellRequest(path);
+      const shell = resolveCustomerShellRequest(path, { staticProxyPurchaseEnabled: true });
       if (shell) return shell;
       if (path.startsWith('/api/proxies?')) {
         return Promise.resolve({
@@ -2351,6 +2357,31 @@ describe('customer proxy flow contracts', () => {
 
     expect(batchRenew).not.toBeDisabled();
     expect(screen.getByText('customer.proxies.selectedCount')).toBeInTheDocument();
+  });
+
+  it('hides legacy renew actions while keeping purchased proxies visible when the static proxy path is disabled', async () => {
+    vi.spyOn(client, 'userApiRequest').mockImplementation((path) => {
+      const shell = resolveCustomerShellRequest(path);
+      if (shell) return shell;
+      if (path.startsWith('/api/proxies?')) {
+        return Promise.resolve({
+          page: 1,
+          pageSize: 20,
+          total: 1,
+          items: [customerProxy()],
+        });
+      }
+      return Promise.reject(new client.ApiError('INTERNAL_ERROR', 'unexpected_request'));
+    });
+
+    renderWithQuery(<CustomerProxyListFeature />);
+
+    const proxy = customerProxy();
+    expect((await screen.findAllByText(`${proxy.ip}:${proxy.port}`)).length).toBeGreaterThan(0);
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'customer.proxies.batchRenew' })).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('button', { name: 'customer.proxies.renew' })).not.toBeInTheDocument();
   });
 
   it('surfaces proxy list backend failures instead of showing an empty table as success', async () => {
@@ -2399,7 +2430,7 @@ describe('customer proxy flow contracts', () => {
     });
     let batchBody: Record<string, unknown> | undefined;
     vi.spyOn(client, 'userApiRequest').mockImplementation((path, init) => {
-      const shell = resolveCustomerShellRequest(path);
+      const shell = resolveCustomerShellRequest(path, { staticProxyPurchaseEnabled: true });
       if (shell) return shell;
       if (path.startsWith('/api/proxies?')) {
         return Promise.resolve({ page: 1, pageSize: 20, total: 2, items: [proxyOne, proxyTwo] });

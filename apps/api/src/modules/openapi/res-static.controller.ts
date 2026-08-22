@@ -12,7 +12,7 @@ import { WalletRepository } from '../wallet/wallet.repository';
 import { RenewProxyUseCase } from '../proxies/use-cases/renew-proxy.use-case';
 import { ChangePasswordUseCase } from '../proxies/use-cases/change-password.use-case';
 import { SwitchIpUseCase } from '../proxies/use-cases/switch-ip.use-case';
-import { decodePublicId, mapProxy, mapOrder, mapResource } from './res-static.mapper';
+import { decodePublicId, encodePublicId, mapProxy, mapOrder, mapResource } from './res-static.mapper';
 import { decryptAesGcm } from '../../common/crypto/aes-gcm';
 import { ConfigService } from '../../common/config/config.service';
 import {
@@ -34,7 +34,8 @@ import {
 import { ErrorCode } from '../../common/errors/error-codes';
 import { formatProxyExport, parseProxyExportFormat } from '../proxies/proxy-export';
 import { ProxyAuditService } from '../proxies/proxy-audit.service';
-import { assertStaticProxyPurchaseDisabled } from '../orders/static-purchase-disabled';
+import { CreateStaticProxyOrderUseCase } from '../orders/use-cases/create-static-proxy-order.use-case';
+import { assertStaticProxyPurchaseEnabled } from '../orders/static-purchase-disabled';
 
 const OPENAPI_PROXY_EXPORT_LIMIT = 1000;
 const OPENAPI_RESOURCE_PAGE_SIZE = 20;
@@ -52,6 +53,7 @@ export class ResStaticController {
     private readonly switchIp: SwitchIpUseCase,
     private readonly config: ConfigService,
     private readonly proxyAudit: ProxyAuditService,
+    private readonly createOrderUseCase: CreateStaticProxyOrderUseCase,
   ) {}
 
   @Post('business')
@@ -108,8 +110,19 @@ export class ResStaticController {
   @Post('buy')
   @HttpCode(200)
   @RequireUser()
-  async buy(@CurrentContext() _ctx: AuthenticatedContext, @Body() _body: BuyDto) {
-    assertStaticProxyPurchaseDisabled();
+  async buy(@CurrentContext() ctx: AuthenticatedContext, @Body() body: BuyDto) {
+    // Answer 410 for any body shape while the legacy path is disabled, so probing
+    // clients never get a validation error from a surface that cannot be used.
+    assertStaticProxyPurchaseEnabled(this.config.get('LEGACY_STATIC_PROXY_ENABLED'));
+    assertBuyBody(body);
+    const result = await this.createOrderUseCase.execute(ctx, {
+      resourceId: decodePublicId('resource', body.resource_id),
+      quantity: positiveInteger(body.quantity, 'quantity'),
+      durationDays: positiveInteger(body.duration_days, 'duration_days'),
+      currency: body.currency,
+      idempotencyKey: body.idempotency_key,
+    });
+    return { order_no: encodePublicId('order', result.orderId), status: result.status };
   }
 
   @Post('renew')
@@ -291,6 +304,11 @@ function assertCalculateBody(body: CalculateDto): void {
   positiveInteger(body.duration_days, 'duration_days');
   positiveInteger(body.quantity, 'quantity');
   requiredString(body.currency, 'currency');
+}
+
+function assertBuyBody(body: BuyDto): void {
+  assertCalculateBody(body);
+  requiredString(body.idempotency_key, 'idempotency_key');
 }
 
 function assertRenewBody(body: RenewDto): void {

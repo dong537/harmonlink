@@ -36,6 +36,7 @@ function createController() {
       {} as never,
       config as unknown as ConfigService,
       audit as unknown as ProxyAuditService,
+      {} as never,
     ),
   };
 }

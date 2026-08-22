@@ -11,6 +11,7 @@ import { formatIpTypeZh, formatProtocolZh, formatRegionNameZh, formatResourceLoc
 import { formatCustomerChannelLabel } from '../../shared/provider/provider-labels';
 import { formatDateTime } from '../../shared/time/time';
 import { formatProxyStatusZh, proxyStatusColor } from '../../shared/proxy/proxy-labels';
+import { useSiteFeatures } from '../../shared/site/use-site-features';
 import { ProxyCopyModal } from './proxy-copy-modal';
 
 interface CustomerProxyDto {
@@ -86,6 +87,7 @@ export function buildProxyExportPath(format: ProxyExportFormat): string {
 
 export function CustomerProxyListFeature() {
   const { t } = useTranslation();
+  const { staticProxyPurchaseEnabled } = useSiteFeatures();
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -302,19 +304,21 @@ export function CustomerProxyListFeature() {
             <Button size="small" className="ipx-proxy-row-action ipx-proxy-row-action-copy" onClick={() => openCopyModal(row)}>
               {t('customer.proxies.copyFormats')}
             </Button>
-            <Button
-              size="small"
-              className="ipx-proxy-row-action ipx-proxy-row-action-renew"
-              loading={rowRenewPending}
-              disabled={lifecycleMutation.isPending && !rowRenewPending}
-              onClick={() => {
-                setActionProxyId(row.id);
-                setActionError(null);
-                lifecycleMutation.mutate({ proxy: row, action: 'renew' });
-              }}
-            >
-              {rowRenewPending ? t('customer.proxies.renewSubmitting') : t('customer.proxies.renew')}
-            </Button>
+            {staticProxyPurchaseEnabled && (
+              <Button
+                size="small"
+                className="ipx-proxy-row-action ipx-proxy-row-action-renew"
+                loading={rowRenewPending}
+                disabled={lifecycleMutation.isPending && !rowRenewPending}
+                onClick={() => {
+                  setActionProxyId(row.id);
+                  setActionError(null);
+                  lifecycleMutation.mutate({ proxy: row, action: 'renew' });
+                }}
+              >
+                {rowRenewPending ? t('customer.proxies.renewSubmitting') : t('customer.proxies.renew')}
+              </Button>
+            )}
             {rowActionFailed && (
               <Typography.Text type="danger">
                 {t('customer.proxies.rowActionFailed', { reason: formatProxyReasonInline(actionError) })}
@@ -473,16 +477,18 @@ export function CustomerProxyListFeature() {
               >
                 {t('customer.proxies.copySelected')}
               </Button>
-              <Button
-                type="primary"
-                aria-label={t('customer.proxies.batchRenew')}
-                icon={<SyncOutlined />}
-                disabled={!hasSelectedProxies}
-                loading={batchLifecycleMutation.isPending}
-                onClick={() => runBatchAction('batch-renew')}
-              >
-                {t('customer.proxies.batchRenew')}
-              </Button>
+              {staticProxyPurchaseEnabled && (
+                <Button
+                  type="primary"
+                  aria-label={t('customer.proxies.batchRenew')}
+                  icon={<SyncOutlined />}
+                  disabled={!hasSelectedProxies}
+                  loading={batchLifecycleMutation.isPending}
+                  onClick={() => runBatchAction('batch-renew')}
+                >
+                  {t('customer.proxies.batchRenew')}
+                </Button>
+              )}
             </Space.Compact>
           </Space>
           <Typography.Text type={hasSelectedProxies ? 'secondary' : undefined}>

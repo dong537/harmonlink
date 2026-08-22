@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedContext } from '../../common/auth/auth-context';
 import { AppError } from '../../common/errors/app-error';
@@ -69,8 +70,18 @@ function reservationSource(): InventoryReservationSource & {
   };
 }
 
-function inventoryRepo(route: unknown): DedicatedLineInventoryRepository {
-  return { findFreshRoute: vi.fn().mockResolvedValue(route) } as unknown as DedicatedLineInventoryRepository;
+type InventoryRepoDouble = DedicatedLineInventoryRepository & {
+  enqueueInventoryLowAlert: ReturnType<typeof vi.fn>;
+};
+
+function inventoryRepo(
+  route: unknown,
+  enqueueInventoryLowAlert = vi.fn().mockResolvedValue(undefined),
+): InventoryRepoDouble {
+  return {
+    findFreshRoute: vi.fn().mockResolvedValue(route),
+    enqueueInventoryLowAlert,
+  } as unknown as InventoryRepoDouble;
 }
 
 const placementPlan = {
@@ -154,13 +165,14 @@ describe('CreateDedicatedLineOrderUseCase', () => {
     expect(source.reserveAndEnqueue).not.toHaveBeenCalled();
   });
 
-  it('fails visibly when no fresh upstream inventory route exists', async () => {
+  it('alerts admins once and fails visibly when no fresh upstream inventory route exists', async () => {
     const source = reservationSource();
+    const inventory = inventoryRepo(null);
     const useCase = new CreateDedicatedLineOrderUseCase(
       new SkuQuoteUseCase(quoteSource([
         { source: 'SITE_DEFAULT_TEMPLATE', candidates: [{ unitPrice: '13.50', currency: 'CNY', source: 'SITE_DEFAULT_TEMPLATE' }], hasCurrencyMismatch: false },
       ])),
-      inventoryRepo(null),
+      inventory,
       placementRepo(),
       new ReserveDedicatedLineStockUseCase(source),
     );
@@ -169,6 +181,47 @@ describe('CreateDedicatedLineOrderUseCase', () => {
       code: ErrorCode.UPSTREAM_OUT_OF_STOCK,
       reasonKey: 'dedicated_line_inventory_unavailable',
     });
+    expect(source.reserveAndEnqueue).not.toHaveBeenCalled();
+    expect(inventory.enqueueInventoryLowAlert).toHaveBeenCalledTimes(1);
+    expect(inventory.enqueueInventoryLowAlert).toHaveBeenCalledWith({
+      siteId: 'site-1',
+      tenantId: 'tenant-1',
+      userId: 'user-1',
+      providerCode: null,
+      providerAccountId: null,
+      skuId: 'sku-1',
+      countryCode: 'HK',
+      requestedQuantity: 2,
+      availableQuantity: 0,
+      sourceVersion: null,
+    });
+  });
+
+  it('keeps the out-of-stock answer when the admin alert enqueue itself fails', async () => {
+    const source = reservationSource();
+    const inventory = inventoryRepo(null, vi.fn().mockRejectedValue(new Error('outbox insert failed')));
+    const logged = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const useCase = new CreateDedicatedLineOrderUseCase(
+      new SkuQuoteUseCase(quoteSource([
+        { source: 'SITE_DEFAULT_TEMPLATE', candidates: [{ unitPrice: '13.50', currency: 'CNY', source: 'SITE_DEFAULT_TEMPLATE' }], hasCurrencyMismatch: false },
+      ])),
+      inventory,
+      placementRepo(),
+      new ReserveDedicatedLineStockUseCase(source),
+    );
+
+    try {
+      // A broken alerting side channel must not turn a truthful 422 into a 500, but it
+      // must not vanish either: the enqueue failure is logged at error level.
+      await expect(useCase.execute(ctx, input)).rejects.toMatchObject({
+        code: ErrorCode.UPSTREAM_OUT_OF_STOCK,
+        reasonKey: 'dedicated_line_inventory_unavailable',
+      });
+      expect(logged).toHaveBeenCalledTimes(1);
+      expect(String(logged.mock.calls[0]![0])).toContain('inventory_low_alert_enqueue_failed');
+    } finally {
+      logged.mockRestore();
+    }
     expect(source.reserveAndEnqueue).not.toHaveBeenCalled();
   });
 

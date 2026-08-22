@@ -49,6 +49,39 @@ describe('ProcessBarkInventoryAlertUseCase', () => {
     expect(outbox.markFailed).not.toHaveBeenCalled();
   });
 
+  it('publishes a total-outage alert that carries no provider without leaking null', async () => {
+    const event = alertEvent({
+      dedupeKey: 'inventory-low:sku-1:missing',
+      payload: {
+        providerCode: null,
+        providerAccountId: null,
+        skuId: 'sku-1',
+        countryCode: 'HK',
+        requestedQuantity: 2,
+        availableQuantity: 0,
+        sourceVersion: null,
+      },
+    });
+    const outbox = {
+      claimRunnableEvent: vi.fn().mockResolvedValue(event),
+      markPublished: vi.fn().mockResolvedValue(undefined),
+      markFailed: vi.fn(),
+    };
+    const notifier = { send: vi.fn().mockResolvedValue({ attempted: 1, delivered: 1 }) };
+    const useCase = new ProcessBarkInventoryAlertUseCase(outbox as never, notifier as never);
+
+    await expect(useCase.execute('evt-1', 'bark-worker')).resolves.toEqual({
+      eventId: 'evt-1', outcome: 'PUBLISHED', delivered: 1,
+    });
+    expect(notifier.send).toHaveBeenCalledWith({
+      title: 'Dedicated line inventory low',
+      body: 'provider=none country=HK sku=sku-1 requested=2 available=0',
+      group: 'dedicated-line-inventory',
+      dedupeKey: 'inventory-low:sku-1:missing',
+    });
+    expect(outbox.markFailed).not.toHaveBeenCalled();
+  });
+
   it('records an upstream Bark failure as a retryable event and never marks it published', async () => {
     const event = alertEvent();
     const outbox = {

@@ -3,6 +3,7 @@ import { FastifyRequest } from 'fastify';
 import { RequirePlatformAdmin } from '../../common/auth/guards';
 import { CurrentContext } from '../../common/auth/current-context.decorator';
 import { AuthenticatedContext } from '../../common/auth/auth-context';
+import { ConfigService } from '../../common/config/config.service';
 import { PublicSiteContext, SitesRepository } from './sites.repository';
 import { UpdateSiteDomainDto } from './dto';
 import { UpdateSiteDomainUseCase } from './update-site-domain.use-case';
@@ -26,6 +27,7 @@ export class SitesController {
   constructor(
     private readonly repo: SitesRepository,
     private readonly updateSiteDomain: UpdateSiteDomainUseCase,
+    private readonly config: ConfigService,
   ) {}
 
   @Get('current')
@@ -35,7 +37,14 @@ export class SitesController {
       this.repo.findById(context.siteId),
       this.repo.listAnnouncements(context.siteId),
     ]);
-    return { site, tenant: context.tenant, announcements };
+    return {
+      site,
+      tenant: context.tenant,
+      announcements,
+      features: {
+        staticProxyPurchaseEnabled: this.config.get('LEGACY_STATIC_PROXY_ENABLED') === 'true',
+      },
+    };
   }
 
   @Put('current/brand')

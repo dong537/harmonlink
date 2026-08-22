@@ -17,6 +17,7 @@ const envSchema = z.object({
   CORS_ORIGINS: z.string().default(''),
   LEGACY_API_V1_ENABLED: z.enum(['true', 'false']).default('false'),
   LEGACY_API_SITE_ID: z.string().default(''),
+  LEGACY_STATIC_PROXY_ENABLED: z.enum(['true', 'false']).default('false'),
   ALLOW_PLACEHOLDER_APIKEYS: z.enum(['true', 'false']).default('false'),
   ALLOW_LOCAL_DEV_APIKEY: z.enum(['true', 'false']).default('false'),
   PAYMENT_CONFIRMATION_ENABLED: z.enum(['true', 'false']).default('false'),

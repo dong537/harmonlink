@@ -61,8 +61,10 @@ export type InventoryLowAlert = {
   siteId: string;
   tenantId: string;
   userId: string;
-  providerCode: string;
-  providerAccountId: string;
+  // Null when no usable route was found at all: there is no snapshot, so there is
+  // no provider to name. siteId + skuId + countryCode is the scope that always holds.
+  providerCode: string | null;
+  providerAccountId: string | null;
   skuId: string;
   countryCode: string;
   requestedQuantity: number;

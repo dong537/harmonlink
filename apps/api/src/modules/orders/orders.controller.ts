@@ -6,6 +6,7 @@ import { CurrentContext } from '../../common/auth/current-context.decorator';
 import { AuthenticatedContext } from '../../common/auth/auth-context';
 import { PageQueryDto, PageResult } from '../../common/pagination/pagination.dto';
 import { AdminOrderOperationsUseCase } from './use-cases/admin-order-operations.use-case';
+import { CreateStaticProxyOrderUseCase } from './use-cases/create-static-proxy-order.use-case';
 import {
   AdminCreateStaticProxyOrderDto,
   AdminOrderOperationDto,
@@ -17,13 +18,13 @@ import { OrdersRepository } from './orders.repository';
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { requireTenantId } from '../wallet/access';
-import { assertStaticProxyPurchaseDisabled } from './static-purchase-disabled';
 
 type OrderListQuery = PageQueryDto & { tenantId?: string; userId?: string; status?: OrderStatus };
 
 @Controller('orders')
 export class OrdersController {
   constructor(
+    private readonly createOrder: CreateStaticProxyOrderUseCase,
     private readonly adminOrderOps: AdminOrderOperationsUseCase,
     private readonly ordersRepo: OrdersRepository,
   ) {}
@@ -32,10 +33,10 @@ export class OrdersController {
   @RequireUser()
   @ApiGoneResponse({ description: 'Static proxy purchase is disabled' })
   async createStaticProxy(
-    @CurrentContext() _ctx: AuthenticatedContext,
-    @Body() _body: CreateStaticProxyOrderDto,
+    @CurrentContext() ctx: AuthenticatedContext,
+    @Body() body: CreateStaticProxyOrderDto,
   ) {
-    assertStaticProxyPurchaseDisabled();
+    return this.createOrder.execute(ctx, body);
   }
 
   @Post('users/:userId/static-proxy')
@@ -43,11 +44,11 @@ export class OrdersController {
   @ApiBody({ type: AdminCreateStaticProxyOrderDto })
   @ApiGoneResponse({ description: 'Static proxy purchase is disabled' })
   async createStaticProxyForUser(
-    @CurrentContext() _ctx: AuthenticatedContext,
-    @Param('userId') _userId: string,
-    @Body() _body: AdminCreateStaticProxyOrderDto,
+    @CurrentContext() ctx: AuthenticatedContext,
+    @Param('userId') userId: string,
+    @Body() body: AdminCreateStaticProxyOrderDto,
   ) {
-    assertStaticProxyPurchaseDisabled();
+    return this.createOrder.executeForAdmin(ctx, userId, body);
   }
 
   @Get()

@@ -12,8 +12,8 @@ export type BarkAlertExecutionResult = {
 };
 
 type InventoryLowPayload = {
-  providerCode: string;
-  providerAccountId: string;
+  providerCode: string | null;
+  providerAccountId: string | null;
   skuId: string;
   countryCode: string;
   requestedQuantity: number | null;
@@ -110,7 +110,10 @@ function parseInventoryLowPayload(raw: unknown): InventoryLowPayload {
   const providerAccountId = readString(record['providerAccountId']);
   const skuId = readString(record['skuId']);
   const countryCode = readString(record['countryCode']);
-  if (!providerCode || !providerAccountId || !skuId || !countryCode) {
+  // Only the inventory scope is mandatory. A total outage is reported with no provider
+  // at all, so requiring one here would bounce the most severe alert to the operator
+  // queue and never notify anyone.
+  if (!skuId || !countryCode) {
     throw new AppError(ErrorCode.VALIDATION_ERROR, 'bark_alert_payload_invalid', 422);
   }
   return {
@@ -135,8 +138,11 @@ function readNumber(value: unknown): number | null {
 function buildAlertBody(payload: InventoryLowPayload): string {
   const requested = payload.requestedQuantity ?? 'unknown';
   const available = payload.availableQuantity ?? 'unknown';
+  // `none` marks a total outage with no route to blame; provider codes are uppercase,
+  // so the token cannot be mistaken for one.
+  const provider = payload.providerCode ?? 'none';
   return [
-    `provider=${payload.providerCode}`,
+    `provider=${provider}`,
     `country=${payload.countryCode}`,
     `sku=${payload.skuId}`,
     `requested=${requested}`,
