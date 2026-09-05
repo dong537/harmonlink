@@ -298,7 +298,7 @@ export class DedicatedLineInventoryRepository implements InventoryReservationSou
         sourceVersion: snapshot.sourceVersion,
         replayed: false,
       };
-    });
+    }, { timeout: 30000 });
   }
 
   async enqueueInventoryLowAlert(alert: InventoryLowAlert): Promise<void> {

@@ -1,0 +1,15 @@
+import { AuthenticatedContext } from '../../common/auth/auth-context';
+import { ProviderAdapter } from './provider.types';
+import { ProviderCapabilitiesDto } from './dto';
+/**
+ * Provider accounts are platform-level resources, so the provider-health panel
+ * is PLATFORM_ADMIN-only. Any other caller (TENANT_ADMIN, USER, SYSTEM) is
+ * rejected before any account is read.
+ */
+export declare function requireProviderAdmin(ctx: AuthenticatedContext): void;
+/**
+ * Derives the capability summary from the account toggle (`inventorySync`) and
+ * which optional lifecycle methods the matching adapter implements. Reflects
+ * real behaviour rather than a hardcoded matrix.
+ */
+export declare function deriveCapabilities(adapter: ProviderAdapter, inventorySyncEnabled: boolean): ProviderCapabilitiesDto;

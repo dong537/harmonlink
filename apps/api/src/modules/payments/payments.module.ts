@@ -4,11 +4,12 @@ import { PaymentsRepository } from './payments.repository';
 import { CreatePaymentOrderUseCase } from './use-cases/create-payment-order.use-case';
 import { ConfirmPaymentOrderUseCase } from './use-cases/confirm-payment-order.use-case';
 import { WalletModule } from '../wallet/wallet.module';
+import { AuthModule } from '../auth/auth.module';
 import { ConfigService } from '../../common/config/config.service';
 
 @Module({
-  imports: [WalletModule],
+  imports: [AuthModule, WalletModule],
   controllers: [PaymentsController],
-  providers: [PaymentsRepository, CreatePaymentOrderUseCase, ConfirmPaymentOrderUseCase, ConfigService],
+  providers: [ConfigService, PaymentsRepository, CreatePaymentOrderUseCase, ConfirmPaymentOrderUseCase],
 })
 export class PaymentsModule {}

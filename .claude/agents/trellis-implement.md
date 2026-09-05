@@ -44,7 +44,7 @@ Before implementing, read:
 **Do NOT execute these git commands:**
 
 - `git commit`
-- `git push`
+- `git push` unless the user explicitly requests it in the current conversation.
 - `git merge`
 
 ---

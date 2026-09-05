@@ -31,17 +31,15 @@ export async function createTestApp(options?: {
   config?: Partial<EnvConfig>;
   beforeInit?: (app: NestFastifyApplication) => void;
 }): Promise<NestFastifyApplication> {
+  // Merge config into process.env so ConfigService reads it naturally
+  if (options?.config) {
+    const mergedConfig = { ...defaultTestConfig, ...process.env, ...options.config };
+    Object.assign(process.env, mergedConfig);
+  }
+
   const builder = Test.createTestingModule({
     imports: [AppModule],
   });
-
-  if (options?.config) {
-    builder.overrideProvider(ConfigService).useValue({
-      get<T extends keyof EnvConfig>(key: T): EnvConfig[T] {
-        return (options.config?.[key] ?? process.env[key] ?? defaultTestConfig[key]) as EnvConfig[T];
-      },
-    });
-  }
 
   const moduleRef = await builder.compile();
 

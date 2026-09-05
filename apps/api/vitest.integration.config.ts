@@ -41,7 +41,7 @@ export default defineConfig({
     env: {
       NODE_ENV: 'test',
       DATABASE_URL: resolveTestDatabaseUrl(),
-      REDIS_URL: process.env['REDIS_URL'] ?? 'redis://localhost:6379',
+      REDIS_URL: process.env['REDIS_URL'] ?? 'redis://localhost:6380',
       // env.schema.ts requires a 64-char hex AES-256 key. This fixed key is not a
       // secret: it only ever encrypts throwaway rows in the disposable test database.
       APP_ENCRYPTION_KEY:

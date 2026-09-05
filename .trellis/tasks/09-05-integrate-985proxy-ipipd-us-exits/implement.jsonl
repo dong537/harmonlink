@@ -1,0 +1,6 @@
+{"spec":".trellis/spec/index.md","why":"项目整体架构和约定"}
+{"spec":".trellis/spec/packages/api.md","why":"API 模块的架构、模块结构、和最佳实践"}
+{"spec":"apps/api/src/modules/providers/README.md","why":"Provider adapter 架构和实现细节"}
+{"spec":"apps/api/src/modules/dedicated-line-orders/README.md","why":"专线订单处理流程"}
+{"spec":"packages/db/prisma/schema.prisma","why":"数据库 schema，理解表关系"}
+{"research":"provider-apis.md","why":"985Proxy 和 ipipd 的 API 文档研究"}

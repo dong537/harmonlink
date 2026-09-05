@@ -36,8 +36,8 @@ import { ApiV1CompatModule } from './modules/api-v1-compat/api-v1-compat.module'
 @Module({
   imports: [PrismaModule, AuthModule, ApiKeysModule, WalletModule, PaymentsModule, ProvidersModule, ResourcesModule, PricingModule, OrdersModule, ProxiesModule, OpenApiModule, TenantsModule, SitesModule, UpstreamAccountsModule, UsersModule, AuditModule, TicketsModule, NotificationsModule, ProxyCheckModule, UpstreamRequestLogsModule, CustomerResellerModule, CatalogModule, DedicatedLineOrdersModule, DedicatedLinesModule, DedicatedLineMigrationsModule, DedicatedLineHealthModule, ProductionReadinessModule, ApiV1CompatModule],
   controllers: [HealthController],
-  providers: [ConfigService, LoggerService],
-  exports: [ConfigService, LoggerService],
+  providers: [LoggerService],
+  exports: [LoggerService],
 })
 export class AppModule {
   configure(consumer: MiddlewareConsumer): void {

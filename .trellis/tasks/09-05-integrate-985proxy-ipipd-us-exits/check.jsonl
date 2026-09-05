@@ -1,0 +1,4 @@
+{"spec":".trellis/spec/index.md","why":"检查整体架构约定是否遵循"}
+{"spec":".trellis/spec/packages/api.md","why":"检查 API 模块结构和错误处理"}
+{"spec":"apps/api/src/modules/providers/README.md","why":"检查 provider adapter 实现规范"}
+{"spec":"packages/db/prisma/schema.prisma","why":"检查数据库操作正确性"}
