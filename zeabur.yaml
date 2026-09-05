@@ -1,8 +1,20 @@
 name: harmonlink
 services:
-  - name: harmonlink
-    dockerfile: ./Dockerfile
+  - name: api
+    dockerfile: ./apps/api/Dockerfile
     ports:
-      - 8080
+      - 3000
+    environment:
+      NODE_ENV: production
+  
+  - name: worker
+    dockerfile: ./apps/worker/Dockerfile
+    environment:
+      NODE_ENV: production
+  
+  - name: web
+    dockerfile: ./apps/web/Dockerfile
+    ports:
+      - 3000
     environment:
       NODE_ENV: production
