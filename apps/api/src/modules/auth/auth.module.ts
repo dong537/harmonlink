@@ -1,4 +1,5 @@
 import { Module, Global } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { AuthController } from './auth.controller';
 import { AuthRepository } from './auth.repository';
 import { LoginUseCase } from './use-cases/login.use-case';
@@ -27,6 +28,7 @@ import { ApiKeysRepository } from '../api-keys/api-keys.repository';
     ApiKeysRepository,
     JwtStrategy,
     ApiKeyStrategy,
+    Reflector,
     AuthGuard,
     UserGuard,
     OperatorGuard,
