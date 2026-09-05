@@ -7,7 +7,7 @@ services:
   api:
     source:
       type: git
-      repo: your-org/your-repo
+      repo: dong537/harmonlink
       branch: railway-fixes-merge
     build:
       type: docker
@@ -29,7 +29,7 @@ services:
   web:
     source:
       type: git
-      repo: your-org/your-repo
+      repo: dong537/harmonlink
       branch: railway-fixes-merge
     build:
       type: docker
@@ -45,7 +45,7 @@ services:
   worker:
     source:
       type: git
-      repo: your-org/your-repo
+      repo: dong537/harmonlink
       branch: railway-fixes-merge
     build:
       type: docker
