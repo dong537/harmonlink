@@ -6,7 +6,7 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 COPY . .
 
-RUN pnpm install --frozen-lockfile --prod=false
+RUN pnpm install --no-frozen-lockfile --prod=false
 RUN pnpm --filter @ipeasy/db generate
 RUN pnpm --filter @ipeasy/worker... build
 
