@@ -14,4 +14,4 @@ WORKDIR /app/apps/worker
 
 ENV NODE_ENV=production
 
-CMD ["node", "dist/worker/src/main.js"]
+CMD ["node", "dist/main.js"]
