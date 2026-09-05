@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 60
-- **Last Active**: 2026-08-19
+- **Total Sessions**: 61
+- **Last Active**: 2026-09-05
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~127 | Active |
+| `journal-2.md` | ~160 | Active |
 | `journal-1.md` | ~1975 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 61 | 2026-09-05 | Fix 5 production-readiness defects: auth scopes, OPERATOR mapping, maintenance, email schema | `27c99f8` | `railway-fixes-merge` |
 | 60 | 2026-08-19 | 修复充值工单与仪表盘线上流程 | `1c27e73` | `master` |
 | 59 | 2026-08-18 | 浏览器门禁与生产状态复核 | - | `master` |
 | 58 | 2026-08-18 | 生产发布门禁：备份权限与数据库核验 | - | `master` |

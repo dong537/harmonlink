@@ -125,3 +125,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 61: Fix 5 production-readiness defects: auth scopes, OPERATOR mapping, maintenance, email schema
+
+**Date**: 2026-09-05
+**Task**: Fix 5 production-readiness defects: auth scopes, OPERATOR mapping, maintenance, email schema
+**Branch**: `railway-fixes-merge`
+
+### Summary
+
+Fixed 5 blocking defects: (1) API key scopes stored but never enforced - added ScopeGuard with session-caller exemption, landed on res-static 15 routes; (2) OPERATOR role silently promoted to PLATFORM_ADMIN in jwt.strategy; (3) maintenance middleware matched all sites via empty OR branch - delegated to SitesRepository.resolvePublicContext; (4) api-v1-compat test encryption key mismatch; (5) email globally unique instead of per-site - migrated to @@unique([siteId, email]). Also fixed clientEmail missing in v1-compat delivery, unified auth input validation. Verification: typecheck clean, lint clean, unit 662/662, integration 241/241 (3 new spec files, 23 new tests).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `27c99f8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
