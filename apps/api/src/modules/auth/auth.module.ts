@@ -15,6 +15,7 @@ import {
   TenantAdminGuard,
   PlatformAdminGuard,
   SystemGuard,
+  ScopeGuard,
 } from '../../common/auth/guards';
 import { ApiKeysRepository } from '../api-keys/api-keys.repository';
 
@@ -32,6 +33,7 @@ import { ApiKeysRepository } from '../api-keys/api-keys.repository';
     TenantAdminGuard,
     PlatformAdminGuard,
     SystemGuard,
+    ScopeGuard,
     LoginUseCase,
     LogoutUseCase,
     ChangePasswordUseCase,
@@ -49,8 +51,10 @@ import { ApiKeysRepository } from '../api-keys/api-keys.repository';
     TenantAdminGuard,
     PlatformAdminGuard,
     SystemGuard,
+    ScopeGuard,
     LoginUseCase,
     LogoutUseCase,
+    ConfigService,
   ],
 })
 export class AuthModule {}
