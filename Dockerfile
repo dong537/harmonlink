@@ -1,34 +1,17 @@
-FROM node:20-alpine AS base
+FROM node:20-alpine
 
-# Install pnpm
-RUN npm install -g pnpm
-
-# Build stage
-FROM base AS builder
 WORKDIR /app
 
-# Copy workspace files
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
-COPY packages ./packages
-COPY apps/control-panel ./apps/control-panel
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile
+COPY . .
 
-# Build the control-panel app
-RUN pnpm --filter @ipeasy/control-panel build
+RUN pnpm install --no-frozen-lockfile --prod=false
+RUN pnpm --filter @ipeasy/db generate
+RUN pnpm --filter @ipeasy/worker... build
 
-# Production stage
-FROM base AS runner
-WORKDIR /app
+WORKDIR /app/apps/worker
 
 ENV NODE_ENV=production
 
-# Copy built files and dependencies
-COPY --from=builder /app/apps/control-panel/dist ./dist
-COPY --from=builder /app/apps/control-panel/package.json ./
-COPY --from=builder /app/node_modules ./node_modules
-
-EXPOSE 8080
-
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/main.js"]
