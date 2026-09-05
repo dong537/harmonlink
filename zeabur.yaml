@@ -21,6 +21,9 @@ services:
     env:
       NODE_ENV: production
       PORT: "8080"
+      # 数据库连接（引用 Zeabur 服务）
+      DATABASE_URL: ${postgresql.DATABASE_URL}
+      REDIS_URL: ${redis.CONNECTION_URL}
 
   # 前端 Web
   web:
@@ -51,6 +54,9 @@ services:
     env:
       NODE_ENV: production
       WORKER_ENABLED: "true"
+      # 数据库连接（引用 Zeabur 服务）
+      DATABASE_URL: ${postgresql.DATABASE_URL}
+      REDIS_URL: ${redis.CONNECTION_URL}
       # 专线订单处理
       DEDICATED_LINE_ORDER_EXECUTION_ENABLED: "true"
       DEDICATED_LINE_ORDER_PROVIDER_ALLOWLIST: "NINE_EIGHT_FIVE,IPIPD"
