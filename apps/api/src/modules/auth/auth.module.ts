@@ -47,6 +47,7 @@ import { ApiKeysRepository } from '../api-keys/api-keys.repository';
     ApiKeysRepository,
     JwtStrategy,
     ApiKeyStrategy,
+    Reflector,
     AuthGuard,
     UserGuard,
     OperatorGuard,
