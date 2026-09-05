@@ -1,6 +1,7 @@
 export { ConfigGuard } from './common/config/config-guard';
 export { env } from './common/config/env.schema';
 export { PrismaModule } from './common/prisma/prisma.module';
+export { AuthModule } from './modules/auth/auth.module';
 export {
   ReclaimExpiredReservationsUseCase,
   type ReclaimExpiredReservationsResult,
