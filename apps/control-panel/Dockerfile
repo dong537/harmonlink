@@ -7,16 +7,17 @@ RUN npm install -g pnpm
 FROM base AS builder
 WORKDIR /app
 
-# Copy workspace files
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
-COPY packages ./packages
-COPY apps/control-panel ./apps/control-panel
+# Copy workspace root files (go up from apps/control-panel)
+COPY ../../pnpm-workspace.yaml ../../package.json ../../pnpm-lock.yaml ./
+COPY ../../packages ../packages
+COPY . ./apps/control-panel
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
 
 # Build the control-panel app
-RUN pnpm --filter @ipeasy/control-panel build
+WORKDIR /app/apps/control-panel
+RUN pnpm build
 
 # Production stage
 FROM base AS runner
@@ -24,7 +25,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Copy built files and necessary dependencies
+# Copy built files
 COPY --from=builder /app/apps/control-panel/dist ./dist
 COPY --from=builder /app/apps/control-panel/package.json ./
 COPY --from=builder /app/node_modules ./node_modules
