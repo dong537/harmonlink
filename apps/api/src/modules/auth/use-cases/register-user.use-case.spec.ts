@@ -141,6 +141,6 @@ describe('RegisterUserUseCase', () => {
 
     await useCase.execute({ ...validDto, email: '  new@example.com  ' });
 
-    expect(repo.findUserByEmail).toHaveBeenCalledWith('new@example.com');
+    expect(repo.findUserByEmail).toHaveBeenCalledWith('site-1', 'new@example.com');
   });
 });

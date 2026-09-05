@@ -4,6 +4,7 @@ import type { AuthenticatedContext } from '../../common/auth/auth-context';
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { SkuQuoteUseCase, type SkuQuoteSource, type ServiceSku } from '../catalog/domain';
+import type { CatalogRepository } from '../catalog/catalog.repository';
 import { CreateDedicatedLineOrderUseCase } from './create-dedicated-line-order.use-case';
 import type { DedicatedLineInventoryRepository } from './dedicated-line-inventory.repository';
 import type { DedicatedLinePlacementRepository } from './dedicated-line-placement.repository';
@@ -50,6 +51,10 @@ function quoteSource(candidateSets: Awaited<ReturnType<SkuQuoteSource['getPriceC
     findSku: vi.fn().mockResolvedValue(dedicatedLineSku),
     getPriceCandidates: vi.fn().mockResolvedValue(candidateSets),
   };
+}
+
+function catalogRepo(sku: ServiceSku | null = dedicatedLineSku): CatalogRepository {
+  return { findSku: vi.fn().mockResolvedValue(sku) } as unknown as CatalogRepository;
 }
 
 function reservationSource(): InventoryReservationSource & {
@@ -109,6 +114,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
   it('prices the order from the catalog SKU price rule and charges the quoted total', async () => {
     const source = reservationSource();
     const useCase = new CreateDedicatedLineOrderUseCase(
+      catalogRepo(),
       new SkuQuoteUseCase(quoteSource([
         { source: 'USER_OVERRIDE', candidates: [{ unitPrice: '13.50', currency: 'CNY', source: 'USER_OVERRIDE' }], hasCurrencyMismatch: false },
       ])),
@@ -137,6 +143,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
   it('keeps decimal precision instead of using JS number arithmetic', async () => {
     const source = reservationSource();
     const useCase = new CreateDedicatedLineOrderUseCase(
+      catalogRepo(),
       new SkuQuoteUseCase(quoteSource([
         { source: 'SITE_DEFAULT_TEMPLATE', candidates: [{ unitPrice: '0.07', currency: 'CNY', source: 'SITE_DEFAULT_TEMPLATE' }], hasCurrencyMismatch: false },
       ])),
@@ -153,6 +160,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
   it('throws PRICE_MISSING when no price rule matches and never charges a default rate', async () => {
     const source = reservationSource();
     const useCase = new CreateDedicatedLineOrderUseCase(
+      catalogRepo(),
       new SkuQuoteUseCase(quoteSource([])),
       inventoryRepo(freshRoute),
       placementRepo(),
@@ -169,6 +177,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
     const source = reservationSource();
     const inventory = inventoryRepo(null);
     const useCase = new CreateDedicatedLineOrderUseCase(
+      catalogRepo(),
       new SkuQuoteUseCase(quoteSource([
         { source: 'SITE_DEFAULT_TEMPLATE', candidates: [{ unitPrice: '13.50', currency: 'CNY', source: 'SITE_DEFAULT_TEMPLATE' }], hasCurrencyMismatch: false },
       ])),
@@ -202,6 +211,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
     const inventory = inventoryRepo(null, vi.fn().mockRejectedValue(new Error('outbox insert failed')));
     const logged = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const useCase = new CreateDedicatedLineOrderUseCase(
+      catalogRepo(),
       new SkuQuoteUseCase(quoteSource([
         { source: 'SITE_DEFAULT_TEMPLATE', candidates: [{ unitPrice: '13.50', currency: 'CNY', source: 'SITE_DEFAULT_TEMPLATE' }], hasCurrencyMismatch: false },
       ])),
@@ -237,6 +247,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
       replayed: true,
     });
     const useCase = new CreateDedicatedLineOrderUseCase(
+      catalogRepo(),
       new SkuQuoteUseCase(quoteSource([
         { source: 'SITE_DEFAULT_TEMPLATE', candidates: [{ unitPrice: '13.50', currency: 'CNY', source: 'SITE_DEFAULT_TEMPLATE' }], hasCurrencyMismatch: false },
       ])),
@@ -257,6 +268,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
   it('emits a job request the worker can parse, so a paid order never strands on payload validation', async () => {
     const source = reservationSource();
     const useCase = new CreateDedicatedLineOrderUseCase(
+      catalogRepo(),
       new SkuQuoteUseCase(quoteSource([
         { source: 'SITE_DEFAULT_TEMPLATE', candidates: [{ unitPrice: '13.50', currency: 'CNY', source: 'SITE_DEFAULT_TEMPLATE' }], hasCurrencyMismatch: false },
       ])),
@@ -291,6 +303,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
   it('resolves placement before charging, so an unsatisfiable policy cannot strand a reservation', async () => {
     const source = reservationSource();
     const useCase = new CreateDedicatedLineOrderUseCase(
+      catalogRepo(),
       new SkuQuoteUseCase(quoteSource([
         { source: 'SITE_DEFAULT_TEMPLATE', candidates: [{ unitPrice: '13.50', currency: 'CNY', source: 'SITE_DEFAULT_TEMPLATE' }], hasCurrencyMismatch: false },
       ])),
@@ -309,6 +322,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
     const source = reservationSource();
     const quote = quoteSource([]);
     const useCase = new CreateDedicatedLineOrderUseCase(
+      catalogRepo(),
       new SkuQuoteUseCase(quote),
       inventoryRepo(freshRoute),
       placementRepo(),
@@ -326,6 +340,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
     const source = reservationSource();
     const quote = quoteSource([]);
     const useCase = new CreateDedicatedLineOrderUseCase(
+      catalogRepo(),
       new SkuQuoteUseCase(quote),
       inventoryRepo(freshRoute),
       placementRepo(),

@@ -1,6 +1,6 @@
 import { Controller, Post, Body, HttpCode } from '@nestjs/common';
 import type { ProxyStatus } from '@ipeasy/db';
-import { RequireUser } from '../../common/auth/guards';
+import { RequireScope, RequireUser } from '../../common/auth/guards';
 import { CurrentContext } from '../../common/auth/current-context.decorator';
 import { AuthenticatedContext } from '../../common/auth/auth-context';
 import { AppError } from '../../common/errors/app-error';
@@ -40,6 +40,13 @@ import { assertStaticProxyPurchaseEnabled } from '../orders/static-purchase-disa
 const OPENAPI_PROXY_EXPORT_LIMIT = 1000;
 const OPENAPI_RESOURCE_PAGE_SIZE = 20;
 
+/**
+ * The scope api_keys are minted with for this compatibility surface. Enforced
+ * per route so a key issued for another surface cannot buy, renew, or read
+ * proxies here just by being ACTIVE with ownerType USER.
+ */
+const RES_STATIC_SCOPE = 'res_static:*';
+
 @Controller('res_static')
 export class ResStaticController {
   constructor(
@@ -59,6 +66,7 @@ export class ResStaticController {
   @Post('business')
   @HttpCode(200)
   @RequireUser()
+  @RequireScope(RES_STATIC_SCOPE)
   async business(@CurrentContext() ctx: AuthenticatedContext, @Body() _body: BusinessListDto) {
     requireTenantId(ctx);
     const resources = await this.resourcesRepo.list(ctx.siteId, { pageSize: OPENAPI_RESOURCE_PAGE_SIZE, publicOnly: true });
@@ -68,6 +76,7 @@ export class ResStaticController {
   @Post('inventory')
   @HttpCode(200)
   @RequireUser()
+  @RequireScope(RES_STATIC_SCOPE)
   async inventory(@CurrentContext() ctx: AuthenticatedContext, @Body() body: InventoryQueryDto) {
     requireTenantId(ctx);
     if (!body.resource_id) {
@@ -86,6 +95,7 @@ export class ResStaticController {
   @Post('calculate')
   @HttpCode(200)
   @RequireUser()
+  @RequireScope(RES_STATIC_SCOPE)
   async calculate(@CurrentContext() ctx: AuthenticatedContext, @Body() body: CalculateDto) {
     assertCalculateBody(body);
     const result = await this.quoteUseCase.execute({
@@ -110,6 +120,7 @@ export class ResStaticController {
   @Post('buy')
   @HttpCode(200)
   @RequireUser()
+  @RequireScope(RES_STATIC_SCOPE)
   async buy(@CurrentContext() ctx: AuthenticatedContext, @Body() body: BuyDto) {
     // Answer 410 for any body shape while the legacy path is disabled, so probing
     // clients never get a validation error from a surface that cannot be used.
@@ -128,6 +139,7 @@ export class ResStaticController {
   @Post('renew')
   @HttpCode(200)
   @RequireUser()
+  @RequireScope(RES_STATIC_SCOPE)
   async renew(@CurrentContext() ctx: AuthenticatedContext, @Body() body: RenewDto) {
     assertRenewBody(body);
     const proxy = await this.renewProxy.execute(
@@ -142,6 +154,7 @@ export class ResStaticController {
   @Post('order_result')
   @HttpCode(200)
   @RequireUser()
+  @RequireScope(RES_STATIC_SCOPE)
   async orderResult(@CurrentContext() ctx: AuthenticatedContext, @Body() body: OrderResultDto) {
     const tenantId = requireTenantId(ctx);
     const order = await this.ordersRepo.findById(decodePublicId('order', requireOrderNo(body)));
@@ -158,6 +171,7 @@ export class ResStaticController {
   @Post('order_list')
   @HttpCode(200)
   @RequireUser()
+  @RequireScope(RES_STATIC_SCOPE)
   async orderList(@CurrentContext() ctx: AuthenticatedContext, @Body() body: OrderListDto) {
     const result = await this.ordersRepo.list(ctx.ownerId, requireTenantId(ctx), {
       page: optionalPositiveInteger(body.page, 1, 'page'),
@@ -170,6 +184,7 @@ export class ResStaticController {
   @Post('ip_list')
   @HttpCode(200)
   @RequireUser()
+  @RequireScope(RES_STATIC_SCOPE)
   async ipList(@CurrentContext() ctx: AuthenticatedContext, @Body() body: IpListDto) {
     const result = await this.proxiesRepo.findByUserId(ctx.ownerId, ctx.siteId, requireTenantId(ctx), {
       page: optionalPositiveInteger(body.page, 1, 'page'),
@@ -186,6 +201,7 @@ export class ResStaticController {
   @Post('ip_export')
   @HttpCode(200)
   @RequireUser()
+  @RequireScope(RES_STATIC_SCOPE)
   async ipExport(@CurrentContext() ctx: AuthenticatedContext, @Body() body: IpExportDto = {}) {
     const format = parseProxyExportFormat(body.format);
     const result = await this.proxiesRepo.findByUserId(ctx.ownerId, ctx.siteId, requireTenantId(ctx), {
@@ -211,6 +227,7 @@ export class ResStaticController {
   @Post('ip_detail')
   @HttpCode(200)
   @RequireUser()
+  @RequireScope(RES_STATIC_SCOPE)
   async ipDetail(@CurrentContext() ctx: AuthenticatedContext, @Body() body: IpDetailDto) {
     const tenantId = requireTenantId(ctx);
     const proxy = await this.proxiesRepo.findById(decodePublicId('proxy', requiredString(body.proxy_id, 'proxy_id')));
@@ -223,6 +240,7 @@ export class ResStaticController {
   @Post('change_auth')
   @HttpCode(200)
   @RequireUser()
+  @RequireScope(RES_STATIC_SCOPE)
   async changeAuth(@CurrentContext() ctx: AuthenticatedContext, @Body() body: ChangeAuthDto) {
     const proxy = await this.changePassword.execute(ctx, decodePublicId('proxy', requiredString(body.proxy_id, 'proxy_id')));
     return mapProxy(proxy, this.decryptProxyPassword(proxy.password));
@@ -231,6 +249,7 @@ export class ResStaticController {
   @Post('switch_ip_list')
   @HttpCode(200)
   @RequireUser()
+  @RequireScope(RES_STATIC_SCOPE)
   async switchIpList(@CurrentContext() ctx: AuthenticatedContext, @Body() body: SwitchIpListDto) {
     const result = await this.proxiesRepo.findByUserId(ctx.ownerId, ctx.siteId, requireTenantId(ctx), {
       page: optionalPositiveInteger(body.page, 1, 'page'),
@@ -243,6 +262,7 @@ export class ResStaticController {
   @Post('switch_ip')
   @HttpCode(200)
   @RequireUser()
+  @RequireScope(RES_STATIC_SCOPE)
   async switchIpAction(@CurrentContext() ctx: AuthenticatedContext, @Body() body: SwitchIpDto) {
     const proxy = await this.switchIp.execute(ctx, decodePublicId('proxy', requiredString(body.proxy_id, 'proxy_id')));
     return mapProxy(proxy, this.decryptProxyPassword(proxy.password));
@@ -251,6 +271,7 @@ export class ResStaticController {
   @Post('wallet/balance')
   @HttpCode(200)
   @RequireUser()
+  @RequireScope(RES_STATIC_SCOPE)
   async walletBalance(@CurrentContext() ctx: AuthenticatedContext) {
     const wallet = await this.walletRepo.getWalletByUserId(ctx.ownerId, ctx.siteId, requireTenantId(ctx));
     return { balance: wallet.available.toString(), currency: wallet.currency };
@@ -259,6 +280,7 @@ export class ResStaticController {
   @Post('wallet/records')
   @HttpCode(200)
   @RequireUser()
+  @RequireScope(RES_STATIC_SCOPE)
   async walletRecords(@CurrentContext() ctx: AuthenticatedContext, @Body() body: WalletRecordsDto) {
     const tenantId = requireTenantId(ctx);
     const wallet = await this.walletRepo.getWalletByUserId(ctx.ownerId, ctx.siteId, tenantId);

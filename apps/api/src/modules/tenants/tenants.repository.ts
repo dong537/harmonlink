@@ -171,10 +171,10 @@ export class TenantsRepository {
     };
   }
 
-  async adminEmailExists(email: string): Promise<boolean> {
+  async adminEmailExists(siteId: string, email: string): Promise<boolean> {
     const [user, admin] = await Promise.all([
-      prisma.users.findUnique({ where: { email }, select: { id: true } }),
-      prisma.admin_users.findUnique({ where: { email }, select: { id: true } }),
+      prisma.users.findUnique({ where: { siteId_email: { siteId, email } }, select: { id: true } }),
+      prisma.admin_users.findUnique({ where: { siteId_email: { siteId, email } }, select: { id: true } }),
     ]);
     return Boolean(user || admin);
   }

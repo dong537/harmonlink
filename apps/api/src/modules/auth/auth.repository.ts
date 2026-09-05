@@ -70,8 +70,17 @@ export class AuthRepository {
     return { token: plainToken, expiresAt: session.expiresAt };
   }
 
-  async findUserByEmail(email: string): Promise<{ id: string } | null> {
-    return prisma.users.findUnique({ where: { email }, select: { id: true } });
+  /**
+   * Identity email is unique per site, not globally, so this lookup MUST be
+   * site-scoped. An unscoped lookup would both reject a legitimate signup for
+   * someone who already holds an account on a different site and turn the
+   * duplicate-email response into a cross-site account oracle.
+   */
+  async findUserByEmail(siteId: string, email: string): Promise<{ id: string } | null> {
+    return prisma.users.findUnique({
+      where: { siteId_email: { siteId, email } },
+      select: { id: true },
+    });
   }
 
   /**

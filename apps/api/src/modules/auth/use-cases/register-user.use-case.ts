@@ -3,7 +3,8 @@ import * as bcrypt from 'bcryptjs';
 import { AppError } from '../../../common/errors/app-error';
 import { ErrorCode } from '../../../common/errors/error-codes';
 import { AuthRepository } from '../auth.repository';
-import { RegisterDto, RegisterResponseDto } from '../dto';
+import { RegisterResponseDto } from '../dto';
+import { authBody } from '../auth-input';
 import { ConfigService } from '../../../common/config/config.service';
 import { requestIdStorage } from '../../../common/logging/request-id.context';
 
@@ -27,11 +28,15 @@ export class RegisterUserUseCase {
    * wallet + audit row in one transaction and returns a session so the new user is
    * logged in immediately.
    */
-  async execute(dto: RegisterDto): Promise<RegisterResponseDto> {
-    const email = typeof dto.email === 'string' ? dto.email.trim() : '';
-    const password = typeof dto.password === 'string' ? dto.password : '';
-    const siteId = typeof dto.siteId === 'string' ? dto.siteId : '';
-    const tenantId = typeof dto.tenantId === 'string' ? dto.tenantId.trim() : '';
+  async execute(input: unknown): Promise<RegisterResponseDto> {
+    // Narrow the body first: without a global ValidationPipe an absent body
+    // arrives as `undefined`, and reading `.email` off it throws a TypeError
+    // that would surface as a 500 instead of a 400.
+    const body = authBody(input, 'register_body_invalid');
+    const email = typeof body['email'] === 'string' ? body['email'].trim() : '';
+    const password = typeof body['password'] === 'string' ? body['password'] : '';
+    const siteId = typeof body['siteId'] === 'string' ? body['siteId'] : '';
+    const tenantId = typeof body['tenantId'] === 'string' ? body['tenantId'].trim() : '';
 
     if (!siteId) {
       throw new AppError(ErrorCode.VALIDATION_ERROR, 'site_required', 400);
@@ -43,9 +48,10 @@ export class RegisterUserUseCase {
       throw new AppError(ErrorCode.VALIDATION_ERROR, 'password_too_weak', 400);
     }
 
-    // users.email is globally unique in the schema, so dedup must be global. A
-    // uniform error avoids revealing which account already exists.
-    const existing = await this.authRepo.findUserByEmail(email);
+    // users.email is unique per site, so dedup is scoped to this site. Checking
+    // globally would reject someone who legitimately holds an account on another
+    // site, and would make this 409 a cross-site account-existence oracle.
+    const existing = await this.authRepo.findUserByEmail(siteId, email);
     if (existing) {
       throw new AppError(ErrorCode.VALIDATION_ERROR, 'email_taken', 409);
     }

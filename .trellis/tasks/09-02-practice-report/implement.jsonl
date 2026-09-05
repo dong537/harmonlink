@@ -1,0 +1,4 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/09-02-practice-report/info.md", "reason": "文档结构、数据来源、输出契约与真实性边界"}
+{"file": ".trellis/tasks/09-02-practice-report/research/authoritative-sources.md", "reason": "报告可引用的权威来源及引用限制"}
+{"file": "docs/superpowers/plans/2026-09-02-practice-report.md", "reason": "TDD 实现步骤、文件接口与验证门槛"}

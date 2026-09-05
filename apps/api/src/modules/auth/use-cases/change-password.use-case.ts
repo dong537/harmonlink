@@ -4,7 +4,7 @@ import { prisma } from '@ipeasy/db';
 import { AppError } from '../../../common/errors/app-error';
 import { ErrorCode } from '../../../common/errors/error-codes';
 import { AuthRepository } from '../auth.repository';
-import { ChangePasswordDto } from '../dto';
+import { authBody } from '../auth-input';
 import { AuthenticatedContext } from '../../../common/auth/auth-context';
 import { requestIdStorage } from '../../../common/logging/request-id.context';
 
@@ -26,14 +26,18 @@ export class ChangePasswordUseCase {
   async execute(
     ctx: AuthenticatedContext,
     currentSessionId: string,
-    dto: ChangePasswordDto,
+    input: unknown,
   ): Promise<void> {
     if (ctx.ownerType !== 'USER') {
       throw new AppError(ErrorCode.PERMISSION_DENIED, 'insufficient_permissions', 403);
     }
 
-    const oldPassword = typeof dto.oldPassword === 'string' ? dto.oldPassword : '';
-    const newPassword = typeof dto.newPassword === 'string' ? dto.newPassword : '';
+    // Permission is checked first so a non-USER caller cannot use body-shape
+    // errors to probe this endpoint. Narrowing then keeps an absent body from
+    // becoming a TypeError-driven 500.
+    const body = authBody(input, 'change_password_body_invalid');
+    const oldPassword = typeof body['oldPassword'] === 'string' ? body['oldPassword'] : '';
+    const newPassword = typeof body['newPassword'] === 'string' ? body['newPassword'] : '';
 
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       throw new AppError(ErrorCode.VALIDATION_ERROR, 'password_too_weak', 400);

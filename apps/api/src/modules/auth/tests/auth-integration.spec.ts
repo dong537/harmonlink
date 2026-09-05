@@ -86,7 +86,7 @@ describe('auth + RBAC integration', () => {
     expect(typeof res.body.data.token).toBe('string');
     expect(res.body.data.token.length).toBeGreaterThan(0);
 
-    const user = await prisma.users.findUniqueOrThrow({ where: { email: 'login-ok@example.com' } });
+    const user = await prisma.users.findUniqueOrThrow({ where: { siteId_email: { siteId, email: 'login-ok@example.com' } } });
     const storedSession = await prisma.sessions.findFirstOrThrow({ where: { ownerId: user.id } });
     expect(storedSession.token).not.toBe(res.body.data.token);
   });
@@ -122,7 +122,7 @@ describe('auth + RBAC integration', () => {
       });
 
     expect([200, 201]).toContain(res.status);
-    const user = await prisma.users.findUniqueOrThrow({ where: { email: 'reseller-signup@example.com' } });
+    const user = await prisma.users.findUniqueOrThrow({ where: { siteId_email: { siteId, email: 'reseller-signup@example.com' } } });
     expect(user.siteId).toBe(siteId);
     expect(user.tenantId).toBe(resellerTenantId);
 
@@ -149,7 +149,7 @@ describe('auth + RBAC integration', () => {
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('VALIDATION_ERROR');
     expect(res.body.data.reasonKey).toBe('signup_tenant_invalid');
-    const user = await prisma.users.findUnique({ where: { email: 'wrong-tenant-signup@example.com' } });
+    const user = await prisma.users.findUnique({ where: { siteId_email: { siteId, email: 'wrong-tenant-signup@example.com' } } });
     expect(user).toBeNull();
   });
 

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { AuthenticatedContext, requireUserContext } from '../../common/auth/auth-context';
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { CatalogRepository } from '../catalog/catalog.repository';
 import { SkuQuoteUseCase } from '../catalog/domain';
 import { requireTenantId } from '../wallet/access';
 import { DedicatedLineInventoryRepository } from './dedicated-line-inventory.repository';
@@ -20,6 +21,7 @@ export interface CreateDedicatedLineOrderInput {
 }
 
 export interface CreateDedicatedLineOrderResult {
+  status: 'QUEUED';
   orderId: string;
   reservationId: string;
   jobId: string;
@@ -40,6 +42,7 @@ export class CreateDedicatedLineOrderUseCase {
   private readonly logger = new Logger(CreateDedicatedLineOrderUseCase.name);
 
   constructor(
+    private readonly catalog: CatalogRepository,
     private readonly quote: SkuQuoteUseCase,
     private readonly inventory: DedicatedLineInventoryRepository,
     private readonly placement: DedicatedLinePlacementRepository,
@@ -56,22 +59,21 @@ export class CreateDedicatedLineOrderUseCase {
     const countryCode = normalizedCountryCode(input.countryCode);
     const idempotencyKey = requiredToken(input.idempotencyKey, 'idempotency_key_required');
 
-    // Price authority: catalog SKU price rules. Throws PRICE_MISSING when no
-    // rule matches, so an unpriced dedicated-line SKU can never be sold.
-    const quote = await this.quote.execute({
-      siteId: ctx.siteId,
-      tenantId,
-      userId: ctx.ownerId,
-      skuCode: input.skuCode,
-      durationDays: input.durationDays,
-      quantity: input.quantity,
-      currency: input.currency,
-    });
+    // Resolve the SKU only to obtain its id for the inventory lookup. Identity,
+    // saleability and delivery-capability are asserted by SkuQuoteUseCase below,
+    // which stays the single authority for those rejections.
+    const sku = await this.catalog.findSku(ctx.siteId, input.skuCode);
+    if (!sku) {
+      throw new AppError(ErrorCode.NOT_FOUND, 'sku_not_found', 404);
+    }
 
+    // Inventory gate precedes pricing so an out-of-stock SKU is reported as such and
+    // can never reach provider ordering, and a missing price rule cannot mask a real
+    // stock outage behind PRICE_MISSING.
     const route = await this.inventory.findFreshRoute({
       siteId: ctx.siteId,
       tenantId,
-      skuId: quote.skuId,
+      skuId: sku.id,
       countryCode,
     });
     if (!route) {
@@ -79,12 +81,12 @@ export class CreateDedicatedLineOrderUseCase {
         siteId: ctx.siteId,
         tenantId,
         userId: ctx.ownerId,
-        skuId: quote.skuId,
+        skuId: sku.id,
         countryCode,
-        requestedQuantity: quote.quantity,
+        requestedQuantity: input.quantity,
       });
       throw new AppError(ErrorCode.UPSTREAM_OUT_OF_STOCK, 'dedicated_line_inventory_unavailable', 422, undefined, {
-        skuCode: quote.skuCode,
+        skuCode: sku.code,
         countryCode,
       });
     }
@@ -96,8 +98,20 @@ export class CreateDedicatedLineOrderUseCase {
       siteId: ctx.siteId,
       tenantId,
       userId: ctx.ownerId,
-      skuId: quote.skuId,
-      quantity: quote.quantity,
+      skuId: sku.id,
+      quantity: input.quantity,
+    });
+
+    // Price authority: catalog SKU price rules. Throws PRICE_MISSING when no
+    // rule matches, so an unpriced dedicated-line SKU can never be sold.
+    const quote = await this.quote.execute({
+      siteId: ctx.siteId,
+      tenantId,
+      userId: ctx.ownerId,
+      skuCode: sku.code,
+      durationDays: input.durationDays,
+      quantity: input.quantity,
+      currency: input.currency,
     });
 
     const reservation = await this.reserveStock.execute({
@@ -142,6 +156,7 @@ export class CreateDedicatedLineOrderUseCase {
     });
 
     return {
+      status: 'QUEUED',
       orderId: reservation.orderId,
       reservationId: reservation.reservationId,
       jobId: reservation.jobId,

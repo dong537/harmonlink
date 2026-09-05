@@ -5,7 +5,7 @@ import { RequireAuth, RequireUser } from '../../common/auth/guards';
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { PageQueryDto } from '../../common/pagination/pagination.dto';
-import { PricingMatrixQuery, PricingMatrixSummaryQuery, PricingRepository } from './pricing.repository';
+import { PricingMatrixQuery, PricingMatrixSummaryQuery, PricingRepository, SkuPriceRuleQuery } from './pricing.repository';
 import { QuoteInput } from './domain';
 import { QuoteUseCase } from './use-cases/quote.use-case';
 import { ResourcesRepository } from '../resources/resources.repository';
@@ -69,6 +69,8 @@ type DedicatedSkuUserPriceBody = DedicatedSkuPriceBody & {
   tenantId: string;
   userId: string;
 };
+
+type SkuPriceRulesBody = DedicatedSkuPriceBody | { rules: DedicatedSkuPriceBody[] };
 
 type QuoteSandboxBody = Omit<QuoteInput, 'siteId'> & {
   siteId?: string;
@@ -161,6 +163,46 @@ export class PricingController {
       tenantId: body.tenantId,
       userId: body.userId,
     });
+  }
+
+  @Post('sku-templates/:id/rules')
+  @RequireAuth()
+  createSkuRules(
+    @CurrentContext() ctx: AuthenticatedContext,
+    @Param('id') templateId: string,
+    @Body() body: SkuPriceRulesBody,
+  ) {
+    assertAdmin(ctx);
+    return this.repo.upsertSkuRules(templateId, ctx.siteId, normalizeSkuRulesBody(body));
+  }
+
+  @Post('sku-overrides')
+  @RequireAuth()
+  createSkuOverride(@CurrentContext() ctx: AuthenticatedContext, @Body() body: DedicatedSkuPriceBody) {
+    assertAdmin(ctx);
+    return this.repo.upsertSkuOverride({ ...normalizeDedicatedSkuPriceBody(body), siteId: ctx.siteId });
+  }
+
+  @Post('user-sku-overrides')
+  @RequireAuth()
+  createUserSkuOverride(@CurrentContext() ctx: AuthenticatedContext, @Body() body: DedicatedSkuUserPriceBody) {
+    assertAdmin(ctx);
+    const normalized = normalizeDedicatedSkuPriceBody(body);
+    if (!body.tenantId || !body.userId) throw new AppError(ErrorCode.VALIDATION_ERROR, 'user_price_target_required', 400);
+    assertTenantWriteAllowed(ctx, body.tenantId);
+    return this.repo.upsertUserSkuOverride({
+      ...normalized,
+      siteId: ctx.siteId,
+      tenantId: body.tenantId,
+      userId: body.userId,
+    });
+  }
+
+  @Get('sku-rules')
+  @RequireAuth()
+  listSkuRules(@CurrentContext() ctx: AuthenticatedContext, @Query() query: SkuPriceRuleQuery) {
+    assertAdmin(ctx);
+    return this.repo.listSkuRules(ctx.siteId, query);
   }
 
   @Get('matrix')
@@ -337,6 +379,14 @@ function assertPlatformAdmin(ctx: AuthenticatedContext): void {
   if (ctx.ownerType !== 'PLATFORM_ADMIN') {
     throw new AppError(ErrorCode.PERMISSION_DENIED, 'insufficient_permissions', 403);
   }
+}
+
+function normalizeSkuRulesBody(body: SkuPriceRulesBody) {
+  const rules = 'rules' in body ? body.rules : [body];
+  if (!Array.isArray(rules) || rules.length === 0) {
+    throw new AppError(ErrorCode.VALIDATION_ERROR, 'price_rules_required', 400);
+  }
+  return rules.map(normalizeDedicatedSkuPriceBody);
 }
 
 function normalizeDedicatedSkuPriceBody(body: DedicatedSkuPriceBody) {

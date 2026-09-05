@@ -4,14 +4,7 @@ import { LoginUseCase } from './use-cases/login.use-case';
 import { LogoutUseCase } from './use-cases/logout.use-case';
 import { ChangePasswordUseCase } from './use-cases/change-password.use-case';
 import { RegisterUserUseCase } from './use-cases/register-user.use-case';
-import {
-  CurrentUserDto,
-  LoginDto,
-  LoginResponseDto,
-  ChangePasswordDto,
-  RegisterDto,
-  RegisterResponseDto,
-} from './dto';
+import { CurrentUserDto, LoginResponseDto, RegisterResponseDto } from './dto';
 import { RequireAuth } from '../../common/auth/guards';
 import { CurrentContext } from '../../common/auth/current-context.decorator';
 import { AuthenticatedContext } from '../../common/auth/auth-context';
@@ -26,12 +19,12 @@ export class AuthController {
   ) {}
 
   @Post('login')
-  async login(@Body() body: LoginDto): Promise<LoginResponseDto> {
+  async login(@Body() body: unknown): Promise<LoginResponseDto> {
     return this.loginUseCase.execute(body);
   }
 
   @Post('register')
-  async register(@Body() body: RegisterDto): Promise<RegisterResponseDto> {
+  async register(@Body() body: unknown): Promise<RegisterResponseDto> {
     return this.registerUserUseCase.execute(body);
   }
 
@@ -62,7 +55,7 @@ export class AuthController {
   async changePassword(
     @CurrentContext() ctx: AuthenticatedContext,
     @Req() req: FastifyRequest,
-    @Body() body: ChangePasswordDto,
+    @Body() body: unknown,
   ): Promise<void> {
     const sessionId = (req as unknown as { sessionId?: string }).sessionId ?? '';
     await this.changePasswordUseCase.execute(ctx, sessionId, body);

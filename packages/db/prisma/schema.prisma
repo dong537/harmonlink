@@ -388,7 +388,7 @@ model users {
   site                            sites                             @relation(fields: [siteId], references: [id])
   tenantId                        String
   tenant                          tenants                           @relation(fields: [tenantId], references: [id])
-  email                           String                            @unique
+  email                           String
   passwordHash                    String
   name                            String?
   phone                           String?
@@ -423,6 +423,11 @@ model users {
   migration_recommendations       dedicated_line_migration_recommendations[] @relation("MigrationRecommendationUsers")
   external_jobs                   external_jobs[]                   @relation("ExternalJobUsers")
   outbox_events                   outbox_events[]                   @relation("OutboxEventUsers")
+
+  // Sites share one database, so identity is site-scoped like tenants/service_skus.
+  // Global uniqueness would both block one person from holding accounts on two
+  // sites and let signup on site A reveal that an account exists on site B.
+  @@unique([siteId, email])
 }
 
 model admin_users {
@@ -431,12 +436,19 @@ model admin_users {
   site         sites       @relation(fields: [siteId], references: [id])
   tenantId     String?
   tenant       tenants?    @relation(fields: [tenantId], references: [id])
-  email        String      @unique
+  email        String
   passwordHash String
   role         AdminRole
   status       AdminStatus
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
+
+  // Deliberately NOT [siteId, tenantId, email]. `tenantId` is nullable for
+  // site-global admins, and Postgres treats NULLs as distinct, so a tenant-aware
+  // key would place no constraint at all on PLATFORM_ADMIN rows. Login also
+  // resolves an admin by (siteId, email) with no tenant in hand, so the key must
+  // make that lookup unique.
+  @@unique([siteId, email])
 }
 
 model sessions {

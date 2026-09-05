@@ -31,9 +31,15 @@ export class JwtStrategy {
     } else {
       const adminUser = await prisma.admin_users.findUnique({ where: { id: session.ownerId } });
       if (!adminUser) throw new AppError(ErrorCode.AUTH_REQUIRED, 'session_expired', 401);
-      ownerType = adminUser.role === 'PLATFORM_ADMIN' || adminUser.role === 'OPERATOR'
-        ? 'PLATFORM_ADMIN'
-        : 'TENANT_ADMIN';
+      // Represent the DB role faithfully. Collapsing OPERATOR into
+      // PLATFORM_ADMIN would make RequirePlatformAdmin() accept operators.
+      if (adminUser.role === 'PLATFORM_ADMIN') {
+        ownerType = 'PLATFORM_ADMIN';
+      } else if (adminUser.role === 'OPERATOR') {
+        ownerType = 'OPERATOR';
+      } else {
+        ownerType = 'TENANT_ADMIN';
+      }
     }
 
     return {

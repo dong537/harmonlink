@@ -6,6 +6,31 @@ import { decryptAesGcm } from '../../common/crypto/aes-gcm';
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
 
+// Exactly the columns the list/get queries select. Declaring the full model row
+// here would let a missing `select` entry typecheck and then read undefined at
+// runtime, which is how clientEmail went missing from the v1-compat payload.
+type DeliveryLineRow = {
+  id: string;
+  legacyId: number;
+  status: string;
+  countryCode: string;
+  protocol: string;
+  expiresAt: Date | null;
+  clientEmail: string;
+  clientIdentityCiphertext: string;
+  quotaBytes: bigint | null;
+  uplinkLimitBps: bigint | null;
+  downlinkLimitBps: bigint | null;
+  maxConnections: number | null;
+  ipLimit: number | null;
+  legacyRemark: string | null;
+  sku: { code: string; name: string } | null;
+  dedicatedLineOrder: { id: string } | null;
+  inboundProfile: { inboundTag: string };
+  deliveryRoutes: Array<{ domains: Array<{ hostname: string; port: number; isPrimary: boolean }> }>;
+  projections: Array<{ status: string }>;
+};
+
 @Injectable()
 export class DedicatedLineDeliveryUseCase {
   constructor(private readonly config: ConfigService) {}
@@ -15,7 +40,27 @@ export class DedicatedLineDeliveryUseCase {
     const lines = await prisma.dedicated_lines.findMany({
       where: { siteId: ctx.siteId, tenantId: ctx.tenantId ?? '', userId: ctx.ownerId },
       orderBy: { createdAt: 'desc' },
-      include: { sku: { select: { code: true, name: true } }, dedicatedLineOrder: { select: { id: true } }, inboundProfile: true, deliveryRoutes: { where: { isCurrent: true }, include: { domains: true } }, projections: { where: { migrationId: null }, select: { status: true } } },
+      select: {
+        id: true,
+        legacyId: true,
+        status: true,
+        countryCode: true,
+        protocol: true,
+        expiresAt: true,
+        clientEmail: true,
+        clientIdentityCiphertext: true,
+        quotaBytes: true,
+        uplinkLimitBps: true,
+        downlinkLimitBps: true,
+        maxConnections: true,
+        ipLimit: true,
+        legacyRemark: true,
+        sku: { select: { code: true, name: true } },
+        dedicatedLineOrder: { select: { id: true } },
+        inboundProfile: { select: { inboundTag: true } },
+        deliveryRoutes: { where: { isCurrent: true }, select: { domains: { select: { hostname: true, port: true, isPrimary: true } } } },
+        projections: { where: { migrationId: null }, select: { status: true } },
+      },
     });
     return lines.map((line) => this.toDelivery(line));
   }
@@ -24,13 +69,33 @@ export class DedicatedLineDeliveryUseCase {
     requireUserContext(ctx);
     const line = await prisma.dedicated_lines.findFirst({
       where: { id: lineId, siteId: ctx.siteId, tenantId: ctx.tenantId ?? '', userId: ctx.ownerId },
-      include: { sku: { select: { code: true, name: true } }, dedicatedLineOrder: { select: { id: true } }, inboundProfile: true, deliveryRoutes: { where: { isCurrent: true }, include: { domains: true } }, projections: { where: { migrationId: null }, select: { status: true } } },
+      select: {
+        id: true,
+        legacyId: true,
+        status: true,
+        countryCode: true,
+        protocol: true,
+        expiresAt: true,
+        clientEmail: true,
+        clientIdentityCiphertext: true,
+        quotaBytes: true,
+        uplinkLimitBps: true,
+        downlinkLimitBps: true,
+        maxConnections: true,
+        ipLimit: true,
+        legacyRemark: true,
+        sku: { select: { code: true, name: true } },
+        dedicatedLineOrder: { select: { id: true } },
+        inboundProfile: { select: { inboundTag: true } },
+        deliveryRoutes: { where: { isCurrent: true }, select: { domains: { select: { hostname: true, port: true, isPrimary: true } } } },
+        projections: { where: { migrationId: null }, select: { status: true } },
+      },
     });
     if (!line) throw new AppError(ErrorCode.NOT_FOUND, 'dedicated_line_not_found', 404);
     return this.toDelivery(line);
   }
 
-  private toDelivery(line: Awaited<ReturnType<typeof prisma.dedicated_lines.findFirstOrThrow>> & { sku?: { code: string; name: string }; dedicatedLineOrder?: { id: string } | null; inboundProfile: { inboundTag: string }; deliveryRoutes: Array<{ domains: Array<{ hostname: string; port: number; isPrimary: boolean }>; listenPort: number }>; projections: Array<{ status: string }> }) {
+  private toDelivery(line: DeliveryLineRow) {
     const route = line.deliveryRoutes[0];
     const ready = line.status === 'ACTIVE' || line.status === 'DEGRADED';
     return {
@@ -42,6 +107,7 @@ export class DedicatedLineDeliveryUseCase {
       countryCode: line.countryCode,
       protocol: line.protocol,
       expiresAt: line.expiresAt,
+      clientEmail: line.clientEmail,
       inboundTag: line.inboundProfile.inboundTag,
       limits: {
         trafficLimitBytes: (line.quotaBytes ?? 0n).toString(),

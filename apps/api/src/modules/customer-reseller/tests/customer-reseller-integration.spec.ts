@@ -146,7 +146,7 @@ describe('customer reseller integration', () => {
     });
 
     const storedUser = await prisma.users.findUniqueOrThrow({
-      where: { email: 'sub-customer@example.com' },
+      where: { siteId_email: { siteId, email: 'sub-customer@example.com' } },
       include: { wallets: true },
     });
     expect(storedUser.tenantId).toBe(ownedTenantId);

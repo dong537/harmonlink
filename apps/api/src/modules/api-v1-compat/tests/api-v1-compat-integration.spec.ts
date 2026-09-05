@@ -19,6 +19,11 @@ const TEST_AES_HEX = '0123456789abcdef'.repeat(4);
 const config: Partial<EnvConfig> = {
   LEGACY_API_V1_ENABLED: 'true',
   LEGACY_API_SITE_ID: '',
+  // The app must decrypt with the same key the seeded ciphertext was built from.
+  // Without this the ConfigService falls through to the process env key injected
+  // by vitest.integration.config.ts, AES-GCM auth fails, and the delivery read
+  // surfaces as a 500 instead of the line payload.
+  APP_ENCRYPTION_KEY: TEST_AES_HEX,
 };
 
 let app: NestFastifyApplication;

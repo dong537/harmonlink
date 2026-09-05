@@ -1,7 +1,7 @@
 import { AppError } from '../errors/app-error';
 import { ErrorCode } from '../errors/error-codes';
 
-export type OwnerType = 'USER' | 'TENANT_ADMIN' | 'PLATFORM_ADMIN' | 'SYSTEM';
+export type OwnerType = 'USER' | 'TENANT_ADMIN' | 'PLATFORM_ADMIN' | 'OPERATOR' | 'SYSTEM';
 
 export interface AuthenticatedContext {
   ownerId: string;
@@ -34,7 +34,7 @@ export function requireUserContext(ctx: AuthenticatedContext): void {
 }
 
 export function requireOperatorContext(ctx: AuthenticatedContext): void {
-  if (ctx.ownerType !== 'PLATFORM_ADMIN' && ctx.ownerType !== 'SYSTEM') {
+  if (ctx.ownerType !== 'PLATFORM_ADMIN' && ctx.ownerType !== 'OPERATOR' && ctx.ownerType !== 'SYSTEM') {
     throw new AppError(ErrorCode.PERMISSION_DENIED, 'PERMISSION_DENIED', 403);
   }
 }

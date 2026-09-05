@@ -52,43 +52,24 @@ export class BarkAlertOutboxRepository {
   }
 
   async recoverExpiredLeases(): Promise<number> {
-    return prisma.$transaction(async (tx) => {
-      const now = new Date();
-      const expired = await tx.outbox_events.findMany({
-        where: { topic: { in: [...BARK_ALERT_TOPICS] }, status: 'LEASED', leaseExpiresAt: { lt: now } },
-        select: { id: true, attempt: true, maxAttempts: true },
-      });
-      let recovered = 0;
-      const retryIds = expired.filter((event) => event.attempt < event.maxAttempts).map((event) => event.id);
-      if (retryIds.length > 0) {
-        const retried = await tx.outbox_events.updateMany({
-          where: { id: { in: retryIds }, status: 'LEASED', leaseExpiresAt: { lt: now } },
-          data: {
-            status: 'RETRYING',
-            nextRunAt: now,
-            leaseOwner: null,
-            leaseExpiresAt: null,
-            lastErrorCode: 'BARK_ALERT_LEASE_EXPIRED',
-            lastErrorDetail: { reasonKey: 'bark_alert_lease_expired' },
-          },
-        });
-        recovered += retried.count;
-      }
-      for (const event of expired.filter((item) => item.attempt >= item.maxAttempts)) {
-        const failed = await tx.outbox_events.updateMany({
-          where: { id: event.id, status: 'LEASED', leaseExpiresAt: { lt: now } },
-          data: {
-            status: 'NEEDS_OPERATOR',
-            leaseOwner: null,
-            leaseExpiresAt: null,
-            lastErrorCode: 'BARK_ALERT_LEASE_ATTEMPTS_EXHAUSTED',
-            lastErrorDetail: { reasonKey: 'bark_alert_lease_attempts_exhausted' },
-          },
-        });
-        recovered += failed.count;
-      }
-      return recovered;
+    // A lease expires after the event was claimed, so the Bark push may already have
+    // reached the admin devices. Retrying would duplicate the alert, so transmission
+    // ambiguity goes to operator review instead of back into the queue.
+    const recovered = await prisma.outbox_events.updateMany({
+      where: {
+        topic: { in: [...BARK_ALERT_TOPICS] },
+        status: 'LEASED',
+        leaseExpiresAt: { lt: new Date() },
+      },
+      data: {
+        status: 'NEEDS_OPERATOR',
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        lastErrorCode: 'BARK_DELIVERY_LEASE_EXPIRED',
+        lastErrorDetail: { reasonKey: 'bark_delivery_lease_expired' },
+      },
     });
+    return recovered.count;
   }
 
   async markPublished(event: BarkAlertEvent, workerId: string): Promise<void> {

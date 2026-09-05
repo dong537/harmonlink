@@ -56,6 +56,66 @@ export class DedicatedLineControlPlaneAdminController {
     return { nodeGroups, inboundProfiles };
   }
 
+  @Post('node-groups')
+  async createNodeGroup(@CurrentContext() ctx: AuthenticatedContext, @Body() body: unknown) {
+    requireOperatorContext(ctx);
+    const value = object(body);
+    const tenantId = optionalToken(value['tenantId']);
+    if (tenantId) {
+      const tenant = await prisma.tenants.findFirst({ where: { id: tenantId, siteId: ctx.siteId }, select: { id: true } });
+      if (!tenant) throw new AppError(ErrorCode.NOT_FOUND, 'control_node_group_tenant_not_found', 404);
+    }
+    try {
+      const row = await prisma.node_groups.create({
+        data: {
+          siteId: ctx.siteId,
+          tenantId,
+          code: token(value['code'], 'control_node_group_code_required'),
+          name: token(value['name'], 'control_node_group_name_required'),
+          regionCode: token(value['regionCode'], 'control_node_group_region_required'),
+        },
+      });
+      return nodeGroupSummary(row);
+    } catch (error: unknown) {
+      if (isUnique(error)) throw new AppError(ErrorCode.IDEMPOTENCY_CONFLICT, 'control_node_group_code_exists', 409);
+      throw error;
+    }
+  }
+
+  @Post('inbound-profiles')
+  async createInboundProfile(@CurrentContext() ctx: AuthenticatedContext, @Body() body: unknown) {
+    requireOperatorContext(ctx);
+    const value = object(body);
+    const nodeGroupId = token(value['nodeGroupId'], 'control_plane_inbound_group_required');
+    const controlNodeId = optionalToken(value['controlNodeId']);
+    const group = await prisma.node_groups.findFirst({ where: { id: nodeGroupId, siteId: ctx.siteId }, select: { id: true } });
+    if (!group) throw new AppError(ErrorCode.NOT_FOUND, 'control_node_group_not_found', 404);
+    if (controlNodeId) {
+      const node = await prisma.control_nodes.findFirst({ where: { id: controlNodeId, siteId: ctx.siteId }, select: { nodeGroupId: true } });
+      if (!node) throw new AppError(ErrorCode.NOT_FOUND, 'control_node_not_found', 404);
+      if (node.nodeGroupId !== nodeGroupId) {
+        throw new AppError(ErrorCode.VALIDATION_ERROR, 'control_plane_inbound_node_group_mismatch', 422);
+      }
+    }
+    try {
+      const row = await prisma.inbound_profiles.create({
+        data: {
+          siteId: ctx.siteId,
+          nodeGroupId,
+          controlNodeId,
+          code: token(value['code'], 'control_plane_inbound_code_required'),
+          protocol: protocol(value['protocol']),
+          inboundTag: token(value['inboundTag'], 'control_plane_inbound_tag_required'),
+          listenPort: port(value['listenPort'], 'control_plane_inbound_port_invalid'),
+        },
+      });
+      return inboundProfileSummary(row);
+    } catch (error: unknown) {
+      if (isUnique(error)) throw new AppError(ErrorCode.IDEMPOTENCY_CONFLICT, 'control_plane_inbound_code_or_tag_exists', 409);
+      throw error;
+    }
+  }
+
   @Post('nodes')
   async createNode(@CurrentContext() ctx: AuthenticatedContext, @Body() body: unknown) {
     requireOperatorContext(ctx);
@@ -158,6 +218,17 @@ function nodeSummary(row: { id: string; code: string; name: string; regionCode: 
   return { id: row.id, code: row.code, name: row.name, regionCode: row.regionCode, baseUrl: row.baseUrl, nodeGroupId: row.nodeGroupId, status: row.status, capacityUnits: row.capacityUnits, allocatedUnits: row.allocatedUnits, lastHealthyAt: row.lastHealthyAt };
 }
 
+function nodeGroupSummary(row: { id: string; code: string; name: string; regionCode: string; tenantId: string | null; isActive: boolean }) {
+  return { id: row.id, code: row.code, name: row.name, regionCode: row.regionCode, tenantId: row.tenantId, isActive: row.isActive };
+}
+
+function inboundProfileSummary(row: { id: string; nodeGroupId: string; controlNodeId: string | null; code: string; protocol: string; inboundTag: string; listenPort: number; isActive: boolean }) {
+  return {
+    id: row.id, nodeGroupId: row.nodeGroupId, controlNodeId: row.controlNodeId, code: row.code,
+    protocol: row.protocol, inboundTag: row.inboundTag, listenPort: row.listenPort, isActive: row.isActive,
+  };
+}
+
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AppError(ErrorCode.VALIDATION_ERROR, 'control_plane_body_invalid', 400);
   return value as Record<string, unknown>;
@@ -175,6 +246,16 @@ function optionalToken(value: unknown): string | null {
 function positiveInt(value: unknown, reasonKey: string): number {
   if (!Number.isInteger(value) || (value as number) < 1) throw new AppError(ErrorCode.VALIDATION_ERROR, reasonKey, 400);
   return value as number;
+}
+
+function port(value: unknown, reasonKey: string): number {
+  if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > 65_535) throw new AppError(ErrorCode.VALIDATION_ERROR, reasonKey, 400);
+  return value as number;
+}
+
+function protocol(value: unknown): 'VLESS' | 'VMESS' | 'MIXED' {
+  if (value === 'VLESS' || value === 'VMESS' || value === 'MIXED') return value;
+  throw new AppError(ErrorCode.VALIDATION_ERROR, 'control_plane_inbound_protocol_invalid', 400);
 }
 
 function status(value: unknown): 'ACTIVE' | 'DRAINING' | 'DISABLED' {

@@ -5,6 +5,7 @@ import { AppError } from '../../../common/errors/app-error';
 import { ErrorCode } from '../../../common/errors/error-codes';
 import { AuthRepository } from '../auth.repository';
 import { LoginDto, LoginResponseDto } from '../dto';
+import { authBody, authEmail, authSecret, authToken } from '../auth-input';
 import { requestIdStorage } from '../../../common/logging/request-id.context';
 
 export type LoginIdentity = {
@@ -28,24 +29,45 @@ export type LegacyLoginResult = {
 export class LoginUseCase {
   constructor(private readonly authRepo: AuthRepository) {}
 
-  async execute(dto: LoginDto): Promise<LoginResponseDto> {
-    const identity = await this.authenticate(dto);
+  async execute(input: unknown): Promise<LoginResponseDto> {
+    const identity = await this.authenticate(input);
     const { token, expiresAt } = await this.authRepo.issueSession(identity);
     await this.auditLogin(identity);
 
     return { token, expiresAt };
   }
 
-  async executeLegacy(dto: LoginDto, expectedOwnerType: 'USER' | 'ADMIN_USER'): Promise<LegacyLoginResult> {
-    const identity = await this.authenticate(dto, expectedOwnerType);
+  async executeLegacy(input: unknown, expectedOwnerType: 'USER' | 'ADMIN_USER'): Promise<LegacyLoginResult> {
+    const identity = await this.authenticate(input, expectedOwnerType);
     const access = await this.authRepo.issueSession(identity);
     const refresh = await this.authRepo.issueRefreshSession(identity);
     await this.auditLogin(identity);
     return { token: access.token, expiresAt: access.expiresAt, refreshToken: refresh.token, identity };
   }
 
-  private async authenticate(dto: LoginDto, expectedOwnerType?: 'USER' | 'ADMIN_USER'): Promise<LoginIdentity> {
-    const { email, password, siteId } = dto;
+  /**
+   * Shape validation lives here rather than in a controller because this is the
+   * single funnel for both `/api/auth/login` and the legacy `/api/v1/auth/*`
+   * entry points. There is no global ValidationPipe, so an unvalidated body
+   * previously reached `bcrypt.compare(undefined, hash)`, which throws a plain
+   * Error and surfaced as a 500 instead of a 400.
+   *
+   * Field-shape failures are 400. Credential mismatch stays 401
+   * `invalid_credentials` and is deliberately identical for unknown email and
+   * wrong password, so neither status nor reasonKey can be used to enumerate
+   * accounts.
+   */
+  private parseCredentials(input: unknown): LoginDto {
+    const body = authBody(input, 'login_body_invalid');
+    return {
+      email: authEmail(body['email'], 'login_email_required'),
+      password: authSecret(body['password'], 'login_password_required'),
+      siteId: authToken(body['siteId'], 'login_site_required'),
+    };
+  }
+
+  private async authenticate(input: unknown, expectedOwnerType?: 'USER' | 'ADMIN_USER'): Promise<LoginIdentity> {
+    const { email, password, siteId } = this.parseCredentials(input);
     const user = expectedOwnerType === 'ADMIN_USER'
       ? null
       : await prisma.users.findFirst({ where: { email, siteId } });
