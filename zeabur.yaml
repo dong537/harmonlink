@@ -1,74 +1,8 @@
-# Zeabur 项目配置
-name: ipeasy
-
-# 服务定义
+name: harmonlink
 services:
-  # 后端 API
-  api:
-    source:
-      type: git
-      repo: dong537/harmonlink
-      branch: railway-fixes-merge
-    build:
-      type: docker
-      dockerfile: apps/api/Dockerfile
-      context: .
-    deploy:
-      port: 8080
-      healthcheck:
-        path: /health
-        timeout: 100
-    env:
+  - name: harmonlink
+    dockerfile: ./Dockerfile
+    ports:
+      - 8080
+    environment:
       NODE_ENV: production
-      PORT: "8080"
-      # 数据库连接（引用 Zeabur 服务）
-      DATABASE_URL: ${postgresql.DATABASE_URL}
-      REDIS_URL: ${redis.CONNECTION_URL}
-
-  # 前端 Web
-  web:
-    source:
-      type: git
-      repo: dong537/harmonlink
-      branch: railway-fixes-merge
-    build:
-      type: docker
-      dockerfile: apps/web/Dockerfile
-      context: .
-    deploy:
-      port: 4173
-    env:
-      NODE_ENV: production
-      WEB_PORT: "4173"
-
-  # 后台 Worker
-  worker:
-    source:
-      type: git
-      repo: dong537/harmonlink
-      branch: railway-fixes-merge
-    build:
-      type: docker
-      dockerfile: apps/worker/Dockerfile
-      context: .
-    env:
-      NODE_ENV: production
-      WORKER_ENABLED: "true"
-      # 数据库连接（引用 Zeabur 服务）
-      DATABASE_URL: ${postgresql.DATABASE_URL}
-      REDIS_URL: ${redis.CONNECTION_URL}
-      # 专线订单处理
-      DEDICATED_LINE_ORDER_EXECUTION_ENABLED: "true"
-      DEDICATED_LINE_ORDER_PROVIDER_ALLOWLIST: "NINE_EIGHT_FIVE,IPIPD"
-      WORKER_DEDICATED_LINE_ORDER_BATCH_SIZE: "5"
-      WORKER_DEDICATED_LINE_ORDER_POLL_INTERVAL_MS: "10000"
-      # 加密密钥（必须与 API 服务相同）
-      APP_ENCRYPTION_KEY: "2ad1ccc26d2349f1b1b2294a78073a6d11aeaffe9fa14ecfa91096998de76b66"
-      # 其他 worker 配置
-      PROVIDER_FULFILLMENT_EXECUTION_ENABLED: "true"
-      WORKER_FULFILLMENT_BATCH_SIZE: "10"
-      WORKER_FULFILLMENT_POLL_INTERVAL_MS: "15000"
-      PROVIDER_INVENTORY_SYNC_ENABLED: "false"
-      DEDICATED_LINE_PROJECTION_EXECUTION_ENABLED: "false"
-      DEDICATED_LINE_MIGRATION_EXECUTION_ENABLED: "false"
-      BARK_ALERTS_ENABLED: "false"
