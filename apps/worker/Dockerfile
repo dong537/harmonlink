@@ -1,5 +1,6 @@
 FROM node:20-alpine
 
+# Cache bust: 2026-09-06-04:47
 WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
