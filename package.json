@@ -13,8 +13,9 @@
     "deploy:railway": "node scripts/deploy-railway.mjs"
   },
   "devDependencies": {
-    "turbo": "2.3.3",
-    "pnpm": "9.15.0"
+    "pnpm": "9.15.0",
+    "tsx": "^4.23.12",
+    "turbo": "2.3.3"
   },
   "engines": {
     "node": ">=20",
