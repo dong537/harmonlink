@@ -173,7 +173,7 @@ export class ResStaticController {
   @RequireUser()
   @RequireScope(RES_STATIC_SCOPE)
   async orderList(@CurrentContext() ctx: AuthenticatedContext, @Body() body: OrderListDto) {
-    const result = await this.ordersRepo.list(ctx.ownerId, requireTenantId(ctx), {
+    const result = await this.ordersRepo.list(ctx.siteId, ctx.ownerId, requireTenantId(ctx), {
       page: optionalPositiveInteger(body.page, 1, 'page'),
       pageSize: optionalPositiveInteger(body.page_size, 20, 'page_size'),
       status: body.status,

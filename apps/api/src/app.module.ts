@@ -2,7 +2,6 @@ import { Module, MiddlewareConsumer } from '@nestjs/common';
 import { RequestIdMiddleware } from './common/logging/request-id.middleware';
 import { MaintenanceMiddleware } from './common/maintenance/maintenance.middleware';
 import { HealthController } from './modules/health/health.controller';
-import { ConfigService } from './common/config/config.service';
 import { LoggerService } from './common/logging/logger.service';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';

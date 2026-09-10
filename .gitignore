@@ -11,11 +11,19 @@ coverage/
 .next/
 out/
 
+# TypeScript output must not live beside source files. These patterns also
+# prevent stale JavaScript from shadowing the current TypeScript in tsx/Node
+# resolution during scripts and tests.
+apps/api/src/**/*.js
+apps/api/src/**/*.d.ts
+apps/api/src/**/*.js.map
+
 # Runtime and logs
 *.log
 logs/
 tmp/
 temp/
+.tmp/
 .cache/
 
 # Environment and secrets

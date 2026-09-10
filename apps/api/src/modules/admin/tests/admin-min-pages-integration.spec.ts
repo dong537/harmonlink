@@ -27,8 +27,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await cleanDatabase();
   await app?.close();
+  await cleanDatabase();
 });
 
 beforeEach(async () => {

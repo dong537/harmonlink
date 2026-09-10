@@ -7,7 +7,9 @@ import { SkuQuoteUseCase } from '../catalog/domain';
 import { requireTenantId } from '../wallet/access';
 import { DedicatedLineInventoryRepository } from './dedicated-line-inventory.repository';
 import { DedicatedLinePlacementRepository } from './dedicated-line-placement.repository';
-import { ReserveDedicatedLineStockUseCase } from './domain';
+import { ReserveDedicatedLineStockUseCase, type DedicatedLineOrderReplayRequest } from './domain';
+import { ResolveActiveZoneUseCase } from '../zones/use-cases';
+import { normalizeZoneCode } from '../zones/domain';
 
 export interface CreateDedicatedLineOrderInput {
   skuCode: string;
@@ -18,6 +20,7 @@ export interface CreateDedicatedLineOrderInput {
   idempotencyKey: string;
   regionCode?: string;
   businessType?: string;
+  zoneCode?: string;
 }
 
 export interface CreateDedicatedLineOrderResult {
@@ -40,6 +43,7 @@ export interface CreateDedicatedLineOrderResult {
 @Injectable()
 export class CreateDedicatedLineOrderUseCase {
   private readonly logger = new Logger(CreateDedicatedLineOrderUseCase.name);
+  private readonly resolveZone: ResolveActiveZoneUseCase | undefined;
 
   constructor(
     private readonly catalog: CatalogRepository,
@@ -47,7 +51,10 @@ export class CreateDedicatedLineOrderUseCase {
     private readonly inventory: DedicatedLineInventoryRepository,
     private readonly placement: DedicatedLinePlacementRepository,
     private readonly reserveStock: ReserveDedicatedLineStockUseCase,
-  ) {}
+    resolveZone?: ResolveActiveZoneUseCase,
+  ) {
+    this.resolveZone = resolveZone;
+  }
 
   async execute(
     ctx: AuthenticatedContext,
@@ -56,13 +63,38 @@ export class CreateDedicatedLineOrderUseCase {
     requireUserContext(ctx);
     const tenantId = requireTenantId(ctx);
 
+    const skuCode = normalizedSkuCode(input.skuCode);
     const countryCode = normalizedCountryCode(input.countryCode);
     const idempotencyKey = requiredToken(input.idempotencyKey, 'idempotency_key_required');
+    const replayRequest: DedicatedLineOrderReplayRequest = {
+      skuCode,
+      countryCode,
+      quantity: input.quantity,
+      durationDays: input.durationDays,
+      currency: normalizedCurrency(input.currency),
+      regionCode: normalizedOptionalText(input.regionCode),
+      businessType: normalizedOptionalText(input.businessType),
+      zoneCode: normalizedOptionalZoneCode(input.zoneCode),
+    };
+
+    // A committed reservation is the source of truth for a retry. Read it
+    // before Zone/catalog/inventory/placement/quote checks because each of
+    // those resources can legitimately change after the original purchase.
+    const replay = await this.inventory.findOrderReplay({
+      siteId: ctx.siteId,
+      tenantId,
+      userId: ctx.ownerId,
+      idempotencyKey,
+      request: replayRequest,
+    });
+    if (replay) return replay;
+
+    const zone = await this.resolveSelectedZone(ctx.siteId, tenantId, ctx.ownerId, input.zoneCode);
 
     // Resolve the SKU only to obtain its id for the inventory lookup. Identity,
     // saleability and delivery-capability are asserted by SkuQuoteUseCase below,
     // which stays the single authority for those rejections.
-    const sku = await this.catalog.findSku(ctx.siteId, input.skuCode);
+    const sku = await this.catalog.findSku(ctx.siteId, skuCode);
     if (!sku) {
       throw new AppError(ErrorCode.NOT_FOUND, 'sku_not_found', 404);
     }
@@ -111,13 +143,15 @@ export class CreateDedicatedLineOrderUseCase {
       skuCode: sku.code,
       durationDays: input.durationDays,
       quantity: input.quantity,
-      currency: input.currency,
+      currency: replayRequest.currency,
     });
 
     const reservation = await this.reserveStock.execute({
       siteId: ctx.siteId,
       tenantId,
       userId: ctx.ownerId,
+      zoneId: zone?.id ?? null,
+      zoneCode: replayRequest.zoneCode,
       providerCode: route.providerCode,
       providerAccountId: route.providerAccountId,
       skuId: quote.skuId,
@@ -127,8 +161,8 @@ export class CreateDedicatedLineOrderUseCase {
       orderSnapshot: {
         skuCode: quote.skuCode,
         skuName: quote.contract.name,
-        regionCode: input.regionCode?.trim() || undefined,
-        businessType: input.businessType?.trim() || undefined,
+        regionCode: replayRequest.regionCode ?? undefined,
+        businessType: replayRequest.businessType ?? undefined,
         durationDays: quote.durationDays,
         unitPrice: quote.unitPrice,
         totalPrice: quote.totalPrice,
@@ -139,7 +173,10 @@ export class CreateDedicatedLineOrderUseCase {
       charge: {
         amount: quote.totalPrice,
         currency: quote.currency,
-        idempotencyKey: `dedicated_line_order:${idempotencyKey}`,
+        // Ledger keys are globally unique even though order idempotency is
+        // scoped. Include the complete buyer scope so two users can choose the
+        // same client-provided key without colliding in ledger_entries.
+        idempotencyKey: orderDebitLedgerKey(ctx.siteId, tenantId, ctx.ownerId, idempotencyKey),
       },
       jobPayload: {
         durationDays: quote.durationDays,
@@ -150,10 +187,29 @@ export class CreateDedicatedLineOrderUseCase {
         inboundTag: plan.inboundTag,
         lineProtocol: plan.protocol,
         maxReplicaFanout: plan.targetReplicaCount,
-        ...(input.regionCode?.trim() ? { regionCode: input.regionCode.trim() } : {}),
-        ...(input.businessType?.trim() ? { businessType: input.businessType.trim() } : {}),
+        ...(replayRequest.regionCode ? { regionCode: replayRequest.regionCode } : {}),
+        ...(replayRequest.businessType ? { businessType: replayRequest.businessType } : {}),
       },
     });
+
+    // A concurrent request can discover the committed reservation inside
+    // reserveAndEnqueue after this request's initial replay probe missed it.
+    // Read the persisted response so a changed quote/provider route cannot leak
+    // into the replay result.
+    if (reservation.replayed) {
+      const replay = await this.inventory.findOrderReplay({
+        siteId: ctx.siteId,
+        tenantId,
+        userId: ctx.ownerId,
+        idempotencyKey,
+        request: replayRequest,
+      });
+      if (replay) return replay;
+      // The reservation layer reported a committed replay, so returning the
+      // current quote would expose mutable pricing as the original contract.
+      // Treat a missing persisted snapshot as an integrity failure instead.
+      throw new AppError(ErrorCode.INTERNAL_ERROR, 'dedicated_line_order_replay_missing', 500);
+    }
 
     return {
       status: 'QUEUED',
@@ -171,6 +227,19 @@ export class CreateDedicatedLineOrderUseCase {
       contractVersion: quote.contractVersion,
       replayed: reservation.replayed,
     };
+  }
+
+  private async resolveSelectedZone(
+    siteId: string,
+    tenantId: string,
+    userId: string,
+    zoneCode: string | undefined,
+  ) {
+    if (zoneCode === undefined || zoneCode === '') return null;
+    if (!this.resolveZone) {
+      throw new AppError(ErrorCode.INTERNAL_ERROR, 'zone_resolver_not_configured', 500);
+    }
+    return this.resolveZone.execute({ siteId, tenantId, userId }, zoneCode);
   }
 
   // Admin-facing alert for a total inventory outage, enqueued through the outbox so no
@@ -210,8 +279,35 @@ function normalizedCountryCode(value: string): string {
   return country;
 }
 
+function normalizedSkuCode(value: string): string {
+  const skuCode = (value ?? '').trim().toUpperCase();
+  if (!skuCode) throw new AppError(ErrorCode.VALIDATION_ERROR, 'sku_code_required', 400);
+  return skuCode;
+}
+
+function normalizedCurrency(value: string): string {
+  const currency = (value ?? '').trim().toUpperCase();
+  if (!currency) throw new AppError(ErrorCode.VALIDATION_ERROR, 'currency_required', 400);
+  return currency;
+}
+
+function normalizedOptionalText(value: string | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  const text = value.trim();
+  return text || null;
+}
+
+function normalizedOptionalZoneCode(value: string | undefined): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  return normalizeZoneCode(value);
+}
+
 function requiredToken(value: string, reasonKey: string): string {
   const token = (value ?? '').trim();
   if (!token) throw new AppError(ErrorCode.VALIDATION_ERROR, reasonKey, 400);
   return token;
+}
+
+function orderDebitLedgerKey(siteId: string, tenantId: string, userId: string, idempotencyKey: string): string {
+  return `dedicated-line-order:${siteId}:${tenantId}:${userId}:${idempotencyKey}`;
 }

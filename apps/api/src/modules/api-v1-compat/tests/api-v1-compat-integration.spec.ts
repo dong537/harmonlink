@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import supertest from 'supertest';
 import { prisma } from '@ipeasy/db';
-import type { EnvConfig } from '../../../common/config/env.schema';
+import { env, type EnvConfig } from '../../../common/config/env.schema';
 import { encryptAesGcm } from '../../../common/crypto/aes-gcm';
 import {
   cleanDatabase,
@@ -11,6 +11,7 @@ import {
   seedSite,
   seedTenant,
   seedUser,
+  seedAdminUser,
   type TestRequest,
 } from '../../../test-utils/integration-setup';
 
@@ -46,12 +47,12 @@ beforeEach(async () => {
   siteId = await seedSite();
   tenantId = await seedTenant(siteId);
   config.LEGACY_API_SITE_ID = siteId;
+  env.LEGACY_API_SITE_ID = siteId;
 });
 
 describe('legacy /api/v1 compatibility API', () => {
   it('returns frozen-frontend capabilities as an unwrapped response', async () => {
     const response = await request.get('/api/v1/settings/capabilities');
-
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       residentialUiEnabled: false,
@@ -109,6 +110,100 @@ describe('legacy /api/v1 compatibility API', () => {
     const replay = await request.post('/api/v1/auth/refresh').send({ refresh_token: login.body.refresh_token });
     expect(replay.status).toBe(401);
     expect(replay.body).toMatchObject({ statusCode: 401, errorCode: 'AUTH_REQUIRED', message: 'refresh_token_expired' });
+  });
+
+  it('logs an admin in through the regular legacy login and maps the role for the frozen client', async () => {
+    const adminId = await seedAdminUser(siteId, null, 'PLATFORM_ADMIN', {
+      email: 'legacy-admin@example.com',
+      password: PASSWORD,
+    });
+
+    const login = await request.post('/api/v1/auth/login').send({
+      email: 'legacy-admin@example.com',
+      password: PASSWORD,
+    });
+
+    expect([200, 201]).toContain(login.status);
+    expect(login.body).toMatchObject({
+      access_token: expect.any(String),
+      refresh_token: expect.stringMatching(/^rt_[0-9a-f]+$/),
+      user: { id: adminId, email: 'legacy-admin@example.com', role: 'admin' },
+    });
+    expect(login.body.user).not.toHaveProperty('balance');
+    expect(
+      await prisma.sessions.count({ where: { ownerType: 'ADMIN_USER', ownerId: adminId } }),
+    ).toBe(2);
+  });
+
+  it('keeps admin-login admin-only and rejects an ordinary user with legacy invalid credentials', async () => {
+    await seedUser(siteId, tenantId, { email: 'legacy-user-admin-route@example.com', password: PASSWORD });
+
+    const response = await request.post('/api/v1/auth/admin-login').send({
+      email: 'legacy-user-admin-route@example.com',
+      password: PASSWORD,
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toMatchObject({
+      statusCode: 401,
+      errorCode: 'AUTH_REQUIRED',
+      message: 'invalid_credentials',
+      path: '/api/v1/auth/admin-login',
+    });
+  });
+
+  it('uses users-first resolution when both identity tables contain the same email', async () => {
+    const email = 'legacy-shared-identity@example.com';
+    const { userId } = await seedUser(siteId, tenantId, { email, password: PASSWORD });
+    const adminId = await seedAdminUser(siteId, null, 'PLATFORM_ADMIN', { email, password: 'AdminOnly123!' });
+
+    const userLogin = await request.post('/api/v1/auth/login').send({ email, password: PASSWORD });
+    expect([200, 201]).toContain(userLogin.status);
+    expect(userLogin.body.user).toMatchObject({ id: userId, email, role: 'user' });
+
+    const adminPasswordThroughRegularLogin = await request.post('/api/v1/auth/login').send({
+      email,
+      password: 'AdminOnly123!',
+    });
+    expect(adminPasswordThroughRegularLogin.status).toBe(401);
+    expect(adminPasswordThroughRegularLogin.body).toMatchObject({
+      statusCode: 401,
+      errorCode: 'AUTH_REQUIRED',
+      message: 'invalid_credentials',
+      path: '/api/v1/auth/login',
+    });
+
+    const adminLogin = await request.post('/api/v1/auth/admin-login').send({ email, password: 'AdminOnly123!' });
+    expect([200, 201]).toContain(adminLogin.status);
+    expect(adminLogin.body.user).toMatchObject({ id: adminId, email, role: 'admin' });
+  });
+
+  it('returns the same legacy invalid-credentials response for unknown and wrong-owner credentials', async () => {
+    await seedUser(siteId, tenantId, { email: 'legacy-known-user@example.com', password: PASSWORD });
+    await seedAdminUser(siteId, null, 'PLATFORM_ADMIN', {
+      email: 'legacy-known-admin@example.com',
+      password: PASSWORD,
+    });
+
+    const responses = await Promise.all([
+      request.post('/api/v1/auth/login').send({ email: 'legacy-known-user@example.com', password: 'wrong-password' }),
+      request.post('/api/v1/auth/login').send({ email: 'legacy-known-admin@example.com', password: 'wrong-password' }),
+      request.post('/api/v1/auth/login').send({ email: 'legacy-unknown@example.com', password: 'wrong-password' }),
+      request.post('/api/v1/auth/admin-login').send({ email: 'legacy-known-user@example.com', password: PASSWORD }),
+      request.post('/api/v1/auth/admin-login').send({ email: 'legacy-known-admin@example.com', password: 'wrong-password' }),
+      request.post('/api/v1/auth/admin-login').send({ email: 'legacy-unknown@example.com', password: PASSWORD }),
+    ]);
+
+    for (const response of responses) {
+      expect(response.status).toBe(401);
+      expect(response.body).toMatchObject({
+        statusCode: 401,
+        errorCode: 'AUTH_REQUIRED',
+        message: 'invalid_credentials',
+      });
+    }
+    expect(await prisma.sessions.count()).toBe(0);
+    expect(await prisma.audit_logs.count({ where: { action: 'auth.login' } })).toBe(0);
   });
 
   it('quotes a dedicated SKU with real catalog and wallet data', async () => {

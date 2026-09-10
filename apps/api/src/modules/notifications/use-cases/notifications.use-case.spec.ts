@@ -88,6 +88,18 @@ describe('ListNotificationsUseCase', () => {
     expect(notificationsDb.findMany.mock.calls[0]![0].where).toMatchObject({ readAt: null });
   });
 
+  it('filters read notifications in the repository where and count', async () => {
+    notificationsDb.count.mockResolvedValue(1);
+    notificationsDb.findMany.mockResolvedValue([row({ readAt: now })]);
+    const useCase = new ListNotificationsUseCase(new NotificationsRepository());
+
+    const result = await useCase.execute(userContext(), { page: 1, pageSize: 20, readState: 'read' });
+
+    expect(result.total).toBe(1);
+    expect(notificationsDb.count.mock.calls[0]![0].where).toMatchObject({ readAt: { not: null } });
+    expect(notificationsDb.findMany.mock.calls[0]![0].where).toMatchObject({ readAt: { not: null } });
+  });
+
   it('rejects non-USER callers', async () => {
     const useCase = new ListNotificationsUseCase(new NotificationsRepository());
     await expect(

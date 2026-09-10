@@ -9,6 +9,10 @@ export type Notification = Prisma.notificationsGetPayload<Record<string, never>>
 
 export interface NotificationListQuery extends PageQueryDto {
   unreadOnly?: string | boolean;
+  readState?: 'read' | 'unread';
+  /** Legacy `/api/v1` query spelling. Kept at the repository boundary so the
+   * filtered count and page always use the same predicate. */
+  read?: string | boolean;
 }
 
 @Injectable()
@@ -52,7 +56,10 @@ export class NotificationsRepository {
       siteId: owner.siteId,
       tenantId: owner.tenantId,
     };
-    if (query.unreadOnly === true || query.unreadOnly === 'true') {
+    const readState = query.readState ?? normalizeReadState(query.read);
+    if (readState === 'read') {
+      where.readAt = { not: null };
+    } else if (readState === 'unread' || query.unreadOnly === true || query.unreadOnly === 'true') {
       where.readAt = null;
     }
 
@@ -114,4 +121,10 @@ export class NotificationsRepository {
     });
     return result.count;
   }
+}
+
+function normalizeReadState(value: string | boolean | undefined): 'read' | 'unread' | undefined {
+  if (value === true || value === 'true' || value === '1') return 'read';
+  if (value === false || value === 'false' || value === '0') return 'unread';
+  return undefined;
 }

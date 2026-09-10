@@ -118,7 +118,7 @@ async function seedExpiredReservation(job?: { status?: JobStatus; attempt?: numb
       currency: 'CNY',
       relatedId: reservation.id,
       reason: 'dedicated_line_order_charge',
-      idempotencyKey: `dedicated_line_order:order-key-${seq}`,
+      idempotencyKey: `dedicated-line-order:${siteId}:${tenantId}:${userId}:order-key-${seq}`,
     },
   });
 

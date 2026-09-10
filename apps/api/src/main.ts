@@ -9,13 +9,17 @@ import { ConfigGuard } from './common/config/config-guard';
 import { CORS_ALLOWED_HEADERS, parseCorsOrigins } from './common/config/cors';
 import { setupSwaggerForEnvironment } from './modules/openapi/openapi-setup';
 import { configureGlobalPrefix } from './common/http/res-static-compat';
+import { createLegacyApiV1RewriteUrl } from './common/http/legacy-api-v1';
 import { installRequestDefense, requestDefenseOptionsFromEnv } from './common/http/request-defense';
 
 async function bootstrap(): Promise<void> {
   ConfigGuard.verify();
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ bodyLimit: env.API_BODY_LIMIT_BYTES }),
+    new FastifyAdapter({
+      bodyLimit: env.API_BODY_LIMIT_BYTES,
+      rewriteUrl: createLegacyApiV1RewriteUrl({ enabled: env.LEGACY_API_V1_ENABLED === 'true' }),
+    }),
     { bufferLogs: true },
   );
 

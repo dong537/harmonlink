@@ -47,6 +47,7 @@ const now = new Date('2026-06-09T00:00:00.000Z');
 function listItem(overrides: Partial<TicketWithUser> = {}): TicketWithUser {
   return {
     id: 'ticket-1',
+    legacyId: 17,
     siteId: 'site-1',
     tenantId: 'tenant-1',
     userId: 'user-1',
@@ -106,6 +107,7 @@ describe('ListAdminTicketsUseCase', () => {
     );
     expect(result.items[0]).toEqual({
       id: 'ticket-1',
+      legacyId: 17,
       subject: 'cannot connect',
       status: 'OPEN',
       userId: 'user-1',
@@ -161,6 +163,7 @@ describe('GetAdminTicketUseCase', () => {
 
     expect(repo.getForScope).toHaveBeenCalledWith('ticket-1', { siteId: 'site-1', tenantId: null });
     expect(result.userEmail).toBe('user@example.com');
+    expect(result.legacyId).toBe(17);
     expect(result.messages).toHaveLength(1);
   });
 

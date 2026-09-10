@@ -12,9 +12,10 @@ import { UpdateDedicatedLineLimitsUseCase } from './update-dedicated-line-limits
 import { ListDedicatedLineLimitsUseCase } from './list-dedicated-line-limits.use-case';
 import { CreatePlacementPolicyUseCase } from './create-placement-policy.use-case';
 import { LineDomainBindingsUseCase } from './line-domain-bindings.use-case';
+import { ZonesModule } from '../zones/zones.module';
 
 @Module({
-  imports: [CatalogModule, WalletModule],
+  imports: [CatalogModule, WalletModule, ZonesModule],
   controllers: [DeliveryRoutesController, DedicatedLineDeliveryController, DedicatedLineControlPlaneAdminController],
   providers: [ConfigService, DeliveryRouteImportUseCase, DedicatedLineDeliveryUseCase, RenewDedicatedLineUseCase, DedicatedLineLifecycleUseCase, ListDedicatedLineLimitsUseCase, UpdateDedicatedLineLimitsUseCase, CreatePlacementPolicyUseCase, LineDomainBindingsUseCase],
   exports: [DeliveryRouteImportUseCase, DedicatedLineDeliveryUseCase, RenewDedicatedLineUseCase],

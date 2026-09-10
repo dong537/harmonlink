@@ -9,6 +9,7 @@ export interface ReplyTicketDto {
 
 export interface TicketListItemDto {
   id: string;
+  legacyId?: number;
   subject: string;
   status: string;
   createdAt: Date;
@@ -25,6 +26,7 @@ export interface TicketMessageDto {
 
 export interface TicketDetailDto {
   id: string;
+  legacyId?: number;
   subject: string;
   status: string;
   createdAt: Date;
@@ -34,6 +36,7 @@ export interface TicketDetailDto {
 
 export interface AdminTicketListItemDto {
   id: string;
+  legacyId?: number;
   subject: string;
   status: string;
   userId: string;
@@ -44,6 +47,7 @@ export interface AdminTicketListItemDto {
 
 export interface AdminTicketDetailDto {
   id: string;
+  legacyId?: number;
   subject: string;
   status: string;
   userId: string;

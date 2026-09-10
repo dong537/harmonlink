@@ -6,4 +6,4 @@ export class TestService {
   constructor(private readonly dep: string) {}
 }
 
-console.log('TestService metadata:', Reflect.getMetadata('design:paramtypes', TestService));
+console.info('TestService metadata:', Reflect.getMetadata('design:paramtypes', TestService));

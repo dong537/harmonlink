@@ -511,7 +511,10 @@ async function seedResellerOrderInfrastructure(siteId: string, tenantId: string,
       quantity: 5,
       sourceVersion: 'reseller-order-inventory-v1',
       capturedAt: new Date(),
-      expiresAt: new Date(Date.now() + 60_000),
+      // Keep the fixture fresh for the full test process. The suite boots a
+      // Nest application before issuing the order, so a one-minute TTL can
+      // expire before the request on slower CI/Windows runners.
+      expiresAt: new Date(Date.now() + 60 * 60_000),
     },
   });
   const group = await prisma.node_groups.create({

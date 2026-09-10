@@ -32,8 +32,32 @@ export type UserOrderContext = {
   tenantId: string;
 };
 
+export type LegacyUserAdminScope = {
+  siteId: string;
+  tenantId: string | null;
+};
+
+export type ResolvedLegacyUser = {
+  userId: string;
+  siteId: string;
+  tenantId: string;
+};
+
 @Injectable()
 export class UsersRepository {
+  async resolveLegacyIdForScope(legacyId: number, scope: LegacyUserAdminScope): Promise<ResolvedLegacyUser> {
+    const user = await prisma.users.findFirst({
+      where: {
+        legacyId,
+        siteId: scope.siteId,
+        ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+      },
+      select: { id: true, siteId: true, tenantId: true },
+    });
+    if (!user) throw new AppError(ErrorCode.NOT_FOUND, 'user_not_found', 404);
+    return { userId: user.id, siteId: user.siteId, tenantId: user.tenantId };
+  }
+
   async findOrderContextByIdInSite(userId: string, siteId: string): Promise<UserOrderContext | null> {
     return prisma.users.findFirst({
       where: { id: userId, siteId },

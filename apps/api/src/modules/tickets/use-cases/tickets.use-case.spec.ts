@@ -33,6 +33,7 @@ const now = new Date('2026-06-09T00:00:00.000Z');
 function ticket(overrides: Partial<Ticket> = {}): Ticket {
   return {
     id: 'ticket-1',
+    legacyId: 17,
     siteId: 'site-1',
     tenantId: 'tenant-1',
     userId: 'user-1',
@@ -144,6 +145,7 @@ describe('ListTicketsUseCase', () => {
     );
     expect(result.items[0]).toEqual({
       id: 'ticket-1',
+      legacyId: 17,
       subject: 'cannot connect',
       status: 'OPEN',
       createdAt: now,
@@ -166,6 +168,7 @@ describe('GetTicketUseCase', () => {
       tenantId: 'tenant-1',
     });
     expect(result.id).toBe('ticket-1');
+    expect(result.legacyId).toBe(17);
   });
 
   it("propagates NOT_FOUND when the ticket is not the caller's", async () => {

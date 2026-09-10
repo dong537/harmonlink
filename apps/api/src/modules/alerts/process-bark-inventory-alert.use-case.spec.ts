@@ -19,7 +19,7 @@ function alertEvent(overrides: Record<string, unknown> = {}) {
       countryCode: 'HK',
       requestedQuantity: 10,
       availableQuantity: 2,
-      sourceVersion: 7,
+      sourceVersion: 'snapshot-hash-7',
     },
     ...overrides,
   };
@@ -41,7 +41,7 @@ describe('ProcessBarkInventoryAlertUseCase', () => {
     });
     expect(notifier.send).toHaveBeenCalledWith({
       title: 'Dedicated line inventory low',
-      body: 'provider=IPIPD country=HK sku=sku-1 requested=10 available=2',
+      body: 'provider=IPIPD country=HK sku=sku-1 requested=10 available=2 sourceVersion=snapshot-hash-7',
       group: 'dedicated-line-inventory',
       dedupeKey: 'inventory-low:sku-1:v1',
     });
@@ -75,7 +75,7 @@ describe('ProcessBarkInventoryAlertUseCase', () => {
     });
     expect(notifier.send).toHaveBeenCalledWith({
       title: 'Dedicated line inventory low',
-      body: 'provider=none country=HK sku=sku-1 requested=2 available=0',
+      body: 'provider=none country=HK sku=sku-1 requested=2 available=0 sourceVersion=unknown',
       group: 'dedicated-line-inventory',
       dedupeKey: 'inventory-low:sku-1:missing',
     });

@@ -130,6 +130,141 @@ describe('dedicated-line inventory reservation', () => {
     expect(await prisma.external_jobs.count()).toBe(1);
   });
 
+  it('returns one fresh result and one replay when the same scoped key races', async () => {
+    const fixture = await seedReservationFixture('line-concurrent-replay@example.com', 2);
+    const input = request(
+      fixture.siteId,
+      fixture.tenantId,
+      fixture.userId,
+      fixture.accountId,
+      fixture.skuId,
+      'concurrent-key',
+    );
+
+    const results = await Promise.all([useCase.execute(input), useCase.execute(input)]);
+
+    expect(results.map((result) => result.replayed).sort()).toEqual([false, true]);
+    expect(new Set(results.map((result) => result.orderId)).size).toBe(1);
+    expect(await prisma.dedicated_line_orders.count()).toBe(1);
+    expect(await prisma.stock_reservations.count()).toBe(1);
+    expect(await prisma.external_jobs.count()).toBe(1);
+    expect(await prisma.ledger_entries.count({ where: { type: 'DEBIT' } })).toBe(1);
+  });
+
+  it('allows different users to reuse the same client idempotency key', async () => {
+    const siteId = await seedSite();
+    const tenantId = await seedTenant(siteId);
+    const first = await seedUser(siteId, tenantId, { email: 'line-scope-a@example.com', password: 'unused' });
+    const second = await seedUser(siteId, tenantId, { email: 'line-scope-b@example.com', password: 'unused' });
+    await prisma.wallets.updateMany({ where: { userId: { in: [first.userId, second.userId] } }, data: { available: '1' } });
+    const account = await prisma.provider_accounts.create({
+      data: {
+        siteId,
+        providerCode: 'NINE_EIGHT_FIVE',
+        status: 'ACTIVE',
+        credentialEncrypted: 'test-only',
+        baseUrl: 'https://provider.invalid',
+        inventorySyncEnabled: true,
+      },
+    });
+    const sku = await prisma.service_skus.create({
+      data: { siteId, code: 'SV', name: 'Short Video', capabilities: { delivery: 'dedicated-line' } },
+    });
+    await prisma.dedicated_line_inventory_snapshots.create({
+      data: {
+        siteId,
+        providerAccountId: account.id,
+        skuId: sku.id,
+        providerCode: account.providerCode,
+        countryCode: 'HK',
+        providerResourceId: 'HK:premium',
+        quantity: 2,
+        sourceVersion: 'scope-sync',
+        capturedAt: new Date(),
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+
+    const results = await Promise.all([
+      useCase.execute(request(siteId, tenantId, first.userId, account.id, sku.id, 'shared-key')),
+      useCase.execute(request(siteId, tenantId, second.userId, account.id, sku.id, 'shared-key')),
+    ]);
+
+    expect(results.every((result) => !result.replayed)).toBe(true);
+    expect(await prisma.dedicated_line_orders.count()).toBe(2);
+    expect(await prisma.stock_reservations.count()).toBe(2);
+    expect(await prisma.ledger_entries.count({ where: { type: 'DEBIT' } })).toBe(2);
+  });
+
+  it('rejects a replay whose charge amount or debit identity changed', async () => {
+    const fixture = await seedReservationFixture('line-charge-conflict@example.com', 2);
+    const input = request(
+      fixture.siteId,
+      fixture.tenantId,
+      fixture.userId,
+      fixture.accountId,
+      fixture.skuId,
+      'charge-key',
+    );
+    await useCase.execute(input);
+
+    await expect(useCase.execute({
+      ...input,
+      charge: { amount: '2', currency: 'CNY', idempotencyKey: 'different-debit-key' },
+    })).rejects.toMatchObject({
+      code: 'IDEMPOTENCY_CONFLICT',
+      reasonKey: 'dedicated_line_order_idempotency_conflict',
+    });
+    expect(await prisma.ledger_entries.count({ where: { type: 'DEBIT' } })).toBe(1);
+  });
+
+  it('rejects a purchase when archiving the selected Zone wins the row-lock race', async () => {
+    const fixture = await seedReservationFixture('line-zone-race@example.com', 1);
+    const zone = await prisma.user_zones.create({
+      data: {
+        siteId: fixture.siteId,
+        tenantId: fixture.tenantId,
+        userId: fixture.userId,
+        code: 'race-zone',
+        name: 'Race Zone',
+      },
+    });
+
+    let markArchiveStarted!: () => void;
+    let releaseArchive!: () => void;
+    const archiveStarted = new Promise<void>((resolve) => { markArchiveStarted = resolve; });
+    const archiveMayCommit = new Promise<void>((resolve) => { releaseArchive = resolve; });
+    const archive = prisma.$transaction(async (tx) => {
+      await tx.user_zones.update({ where: { id: zone.id }, data: { status: 'ARCHIVED' } });
+      markArchiveStarted();
+      await archiveMayCommit;
+    });
+    await archiveStarted;
+
+    const purchase = useCase.execute({
+      ...request(
+        fixture.siteId,
+        fixture.tenantId,
+        fixture.userId,
+        fixture.accountId,
+        fixture.skuId,
+        'zone-race-key',
+      ),
+      zoneId: zone.id,
+    }).then(
+      (value) => ({ value, error: null }),
+      (error: unknown) => ({ value: null, error }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    releaseArchive();
+    await archive;
+
+    const outcome = await purchase;
+    expect(outcome.value).toBeNull();
+    expect(outcome.error).toMatchObject({ httpStatus: 409, reasonKey: 'zone_archived' });
+    expect(await prisma.dedicated_line_orders.count()).toBe(0);
+  });
+
   it('projects only explicitly mapped provider resources into the dedicated snapshot and route selector', async () => {
     const siteId = await seedSite();
     const tenantId = await seedTenant(siteId);
@@ -228,7 +363,11 @@ function request(
       priceSource: 'SITE_DEFAULT_TEMPLATE',
       contractVersion: 1,
     },
-    charge: { amount: '1', currency: 'CNY', idempotencyKey: `debit-${idempotencyKey}` },
+    charge: {
+      amount: '1',
+      currency: 'CNY',
+      idempotencyKey: `debit-${siteId}-${tenantId}-${userId}-${idempotencyKey}`,
+    },
     jobPayload: {
       durationDays: 30,
       currency: 'CNY',
@@ -240,4 +379,39 @@ function request(
       maxReplicaFanout: 1,
     },
   } as const;
+}
+
+async function seedReservationFixture(email: string, quantity: number) {
+  const siteId = await seedSite();
+  const tenantId = await seedTenant(siteId);
+  const { userId } = await seedUser(siteId, tenantId, { email, password: 'unused' });
+  await prisma.wallets.update({ where: { userId }, data: { available: String(quantity) } });
+  const account = await prisma.provider_accounts.create({
+    data: {
+      siteId,
+      providerCode: 'NINE_EIGHT_FIVE',
+      status: 'ACTIVE',
+      credentialEncrypted: 'test-only',
+      baseUrl: 'https://provider.invalid',
+      inventorySyncEnabled: true,
+    },
+  });
+  const sku = await prisma.service_skus.create({
+    data: { siteId, code: 'SV', name: 'Short Video', capabilities: { delivery: 'dedicated-line' } },
+  });
+  await prisma.dedicated_line_inventory_snapshots.create({
+    data: {
+      siteId,
+      providerAccountId: account.id,
+      skuId: sku.id,
+      providerCode: account.providerCode,
+      countryCode: 'HK',
+      providerResourceId: 'HK:premium',
+      quantity,
+      sourceVersion: `sync-${email}`,
+      capturedAt: new Date(),
+      expiresAt: new Date(Date.now() + 60_000),
+    },
+  });
+  return { siteId, tenantId, userId, accountId: account.id, skuId: sku.id };
 }

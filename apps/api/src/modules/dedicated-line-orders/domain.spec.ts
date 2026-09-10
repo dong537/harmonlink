@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
@@ -11,6 +12,7 @@ const input: ReserveDedicatedLineStockInput = {
   siteId: 'site-1',
   tenantId: 'tenant-1',
   userId: 'user-1',
+  zoneId: null,
   providerCode: 'NINE_EIGHT_FIVE',
   providerAccountId: 'account-1',
   skuId: 'sku-sv',
@@ -89,6 +91,34 @@ describe('ReserveDedicatedLineStockUseCase', () => {
       requestedQuantity: 2,
       availableQuantity: 1,
     }));
+  });
+
+  it('keeps the typed out-of-stock error when alert enqueue fails', async () => {
+    const logged = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const inventory = source({
+      reserveAndEnqueue: vi.fn().mockResolvedValue({
+        kind: 'INSUFFICIENT',
+        providerCode: input.providerCode,
+        providerAccountId: input.providerAccountId,
+        skuId: input.skuId,
+        countryCode: input.countryCode,
+        requestedQuantity: input.quantity,
+        availableQuantity: 0,
+        sourceVersion: 'snapshot-hash',
+      }),
+      enqueueInventoryLowAlert: vi.fn().mockRejectedValue(new Error('outbox unavailable')),
+    });
+
+    try {
+      await expect(new ReserveDedicatedLineStockUseCase(inventory).execute(input)).rejects.toMatchObject({
+        code: ErrorCode.UPSTREAM_OUT_OF_STOCK,
+        reasonKey: 'dedicated_line_inventory_insufficient',
+        details: expect.objectContaining({ sourceVersion: 'snapshot-hash' }),
+      });
+      expect(logged).toHaveBeenCalledOnce();
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   it('propagates an idempotency conflict without sending an alert', async () => {

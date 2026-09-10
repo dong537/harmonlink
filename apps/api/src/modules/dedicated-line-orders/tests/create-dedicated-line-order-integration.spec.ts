@@ -300,8 +300,11 @@ describe('CreateDedicatedLineOrder (real database, real HTTP)', () => {
       placeOrder(scope, validOrder),
     ]);
 
-    // Both may succeed (one is a replay), but the side effects happen once.
-    expect([first.status, second.status].filter((status) => status === 201).length).toBeGreaterThan(0);
+    // Both requests must resolve through the typed success/replay path. A
+    // unique-index loser must never leak a raw 500 from the aborted transaction.
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    expect([first.body.data.replayed, second.body.data.replayed].sort()).toEqual([false, true]);
 
     expect(await prisma.dedicated_line_orders.count({ where: { siteId: scope.siteId } })).toBe(1);
     expect(await prisma.external_jobs.count({ where: { kind: ORDER_JOB_KIND } })).toBe(1);

@@ -30,5 +30,17 @@ import { UpdateAdminTicketStatusUseCase } from './use-cases/update-admin-ticket-
     ReplyAdminTicketUseCase,
     UpdateAdminTicketStatusUseCase,
   ],
+  exports: [
+    TicketsRepository,
+    CreateTicketUseCase,
+    ListTicketsUseCase,
+    GetTicketUseCase,
+    ReplyTicketUseCase,
+    CloseTicketUseCase,
+    ListAdminTicketsUseCase,
+    GetAdminTicketUseCase,
+    ReplyAdminTicketUseCase,
+    UpdateAdminTicketStatusUseCase,
+  ],
 })
 export class TicketsModule {}

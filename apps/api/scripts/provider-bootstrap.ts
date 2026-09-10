@@ -1,15 +1,11 @@
-// One-shot production bootstrap: configure the three native providers from env,
-// run real inventory sync (IPIPD/985 always; PR only if its IP allowlist permits),
-// then seed the default price template. Idempotent.
-//
-// Reuses existing logic: credential validation/encryption (provider-ops + aes-gcm),
-// SyncInventoryUseCase (no inventory-write duplication), seedPricing.
+// One-shot production bootstrap: configure native providers from env, run a
+// real inventory sync, then seed the default price template. Idempotent.
 //
 // Credentials come from env vars (never committed, never logged):
 //   IPIPD_APP_ID, IPIPD_APP_SECRET
-//   NINE_EIGHT_FIVE_APIKEY
+//   NINE_EIGHT_FIVE_APIKEY, NINE_EIGHT_FIVE_ZONE_ID
 //   PR_APIKEY
-// Optional: BOOTSTRAP_SYNC_PR=true to also sync PR (after allowlisting Railway egress IP).
+// Optional: BOOTSTRAP_SYNC_PR=true to sync PR after its IP allowlist is set.
 import './_cli-bootstrap';
 import { NestFactory } from '@nestjs/core';
 import { prisma } from '@ipeasy/db';
@@ -19,39 +15,16 @@ import { AppModule } from '../src/app.module';
 import { SyncInventoryUseCase } from '../src/modules/resources/use-cases/sync-inventory.use-case';
 import { assertProviderBaseUrl, assertProviderCredential, writeCliAudit } from './_provider-ops';
 import { seedPricing } from './seed-pricing';
+import {
+  buildProviderPlans,
+  providerBootstrapExitCode,
+  syncProviderPlans,
+  type NativeBootstrapProvider,
+  type ProviderBootstrapPlan,
+} from '../src/modules/providers/provider-bootstrap-plans';
 
-type NativeProvider = 'IPIPD' | 'NINE_EIGHT_FIVE' | 'PR';
-
-interface ProviderPlan {
-  code: NativeProvider;
-  baseUrl: string;
-  credential: Record<string, string>;
-  sync: boolean;
-}
-
-function buildPlans(): ProviderPlan[] {
-  const plans: ProviderPlan[] = [];
-  const ipipdId = process.env.IPIPD_APP_ID?.trim();
-  const ipipdSecret = process.env.IPIPD_APP_SECRET?.trim();
-  if (ipipdId && ipipdSecret) {
-    plans.push({
-      code: 'IPIPD',
-      baseUrl: process.env.IPIPD_BASE_URL?.trim() || 'https://api.ipipd.cn',
-      credential: { appId: ipipdId, appSecret: ipipdSecret },
-      sync: true,
-    });
-  }
-  const nefKey = process.env.NINE_EIGHT_FIVE_APIKEY?.trim();
-  if (nefKey) {
-    plans.push({ code: 'NINE_EIGHT_FIVE', baseUrl: 'https://open-api.985proxy.com', credential: { apikey: nefKey }, sync: true });
-  }
-  const prKey = process.env.PR_APIKEY?.trim();
-  if (prKey) {
-    // PR has an IP allowlist; only sync when explicitly enabled after allowlisting.
-    plans.push({ code: 'PR', baseUrl: 'https://proxy-seller.com/personal/api/v1', credential: { apikey: prKey }, sync: process.env.BOOTSTRAP_SYNC_PR === 'true' });
-  }
-  return plans;
-}
+type NativeProvider = NativeBootstrapProvider;
+type ProviderPlan = ProviderBootstrapPlan;
 
 async function upsertAccount(siteId: string, plan: ProviderPlan, encryptionKey: string): Promise<string> {
   const credentialObj = assertProviderCredential(plan.code, plan.credential);
@@ -71,9 +44,11 @@ async function upsertAccount(siteId: string, plan: ProviderPlan, encryptionKey: 
     accountId = created.id;
   }
   await writeCliAudit({
-    siteId, tenantId: null,
+    siteId,
+    tenantId: null,
     action: existing ? 'provider.credential.update' : 'provider.credential.create',
-    targetType: 'provider_account', targetId: accountId,
+    targetType: 'provider_account',
+    targetId: accountId,
     requestId: `cli:provider:bootstrap:${plan.code}:${accountId}`,
     meta: { providerCode: plan.code, status: 'ACTIVE', baseUrl, timeoutMs: 15000, inventorySyncEnabled: true },
   });
@@ -83,14 +58,23 @@ async function upsertAccount(siteId: string, plan: ProviderPlan, encryptionKey: 
 
 async function main(): Promise<number> {
   const encryptionKey = process.env.APP_ENCRYPTION_KEY;
-  if (!encryptionKey) { console.error('bootstrap: APP_ENCRYPTION_KEY missing'); return 1; }
+  if (!encryptionKey) {
+    console.error('bootstrap: APP_ENCRYPTION_KEY missing');
+    return 1;
+  }
 
   const site = await prisma.sites.findFirst({ orderBy: { createdAt: 'asc' } });
-  if (!site) { console.error('bootstrap: no site found'); return 1; }
+  if (!site) {
+    console.error('bootstrap: no site found');
+    return 1;
+  }
   console.log(`[bootstrap] site=${site.code} (${site.id})`);
 
-  const plans = buildPlans();
-  if (plans.length === 0) { console.error('bootstrap: no provider credentials in env, nothing to do'); return 1; }
+  const plans = buildProviderPlans(process.env);
+  if (plans.length === 0) {
+    console.error('bootstrap: no provider credentials in env, nothing to do');
+    return 1;
+  }
 
   const accountIdByProvider = new Map<NativeProvider, string>();
   for (const plan of plans) {
@@ -98,28 +82,45 @@ async function main(): Promise<number> {
     accountIdByProvider.set(plan.code, accountId);
   }
 
-  // Inventory sync via the real use case (never writes fake inventory).
+  // Inventory sync uses the real use case and never writes synthetic stock.
   const app = await NestFactory.createApplicationContext(AppModule, { logger: false });
-  const syncInventory = app.get(SyncInventoryUseCase, { strict: false });
-  for (const plan of plans.filter((p) => p.sync)) {
-    try {
-      const result = await syncInventory.execute(site.id, plan.code, null, accountIdByProvider.get(plan.code));
-      console.log(`[sync] ${plan.code}: synced ${result.synced} resource(s), created=${result.created}, updated=${result.updated}, countries=${result.countries.join(',')}`);
-    } catch (err) {
-      // Surface upstream failures (allowlist/auth) loudly; do not fake inventory.
-      console.error(`[sync] ${plan.code}: FAILED — ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-  await app.close();
+  try {
+    const syncInventory = app.get(SyncInventoryUseCase, { strict: false });
+    const syncResult = await syncProviderPlans(plans, accountIdByProvider, (plan, accountId) =>
+      syncInventory.execute(site.id, plan.code, null, accountId),
+    );
 
-  // Seed default price template for all ACTIVE resources.
+    for (const outcome of syncResult.outcomes) {
+      if (outcome.status === 'SUCCESS') {
+        const result = outcome.result;
+        console.log(`[sync] ${outcome.code}: synced ${result?.synced ?? 0} resource(s), created=${result?.created ?? 0}, updated=${result?.updated ?? 0}, countries=${result?.countries?.join(',') ?? ''}`);
+      } else {
+        // Surface upstream failures (allowlist/auth) loudly; do not fake inventory.
+        console.error(`[sync] ${outcome.code}: FAILED - ${outcome.error instanceof Error ? outcome.error.message : String(outcome.error)}`);
+      }
+    }
+
+    // A provider sync failure means inventory is not trustworthy. Do not seed
+    // pricing or return success while an enabled provider is unavailable.
+    if (syncResult.failedProviders.length > 0) {
+      console.error(`bootstrap: inventory sync failed for ${syncResult.failedProviders.join(',')}; refusing success`);
+      return providerBootstrapExitCode(true);
+    }
+  } finally {
+    await app.close();
+  }
+
+  // Seed the default price template only after every enabled sync succeeded.
   const pricing = await seedPricing(site.id);
   console.log(`[pricing] template=${pricing.templateId} rules=${pricing.ruleCount}`);
   return 0;
 }
 
 main()
-  .then(async (code) => { await prisma.$disconnect(); process.exit(code); })
+  .then(async (code) => {
+    await prisma.$disconnect();
+    process.exit(code);
+  })
   .catch(async (err: unknown) => {
     console.error('provider:bootstrap failed:', err instanceof Error ? err.message : String(err));
     await prisma.$disconnect();

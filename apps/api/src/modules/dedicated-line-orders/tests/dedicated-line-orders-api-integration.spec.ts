@@ -161,10 +161,16 @@ describe('dedicated-line customer order API', () => {
 
     await prisma.sku_price_rules.updateMany({ where: { skuId: sku.id }, data: { unitPrice: '11' } });
     const changedQuoteReplay = await request.post('/api/dedicated-line-orders').set('Authorization', `Bearer ${token}`).send(body);
-    expect(changedQuoteReplay.status).toBe(409);
-    expect(changedQuoteReplay.body).toMatchObject({
-      code: 'IDEMPOTENCY_CONFLICT',
-      data: { reasonKey: 'dedicated_line_order_idempotency_conflict' },
+    // A committed order is the idempotency source of truth. A later price
+    // change must not make a network retry fail or charge a second time.
+    expect(changedQuoteReplay.status).toBe(201);
+    expect(changedQuoteReplay.body.data).toMatchObject({
+      orderId: first.body.data.orderId,
+      reservationId: first.body.data.reservationId,
+      jobId: first.body.data.jobId,
+      unitPrice: '10',
+      totalPrice: '20',
+      replayed: true,
     });
     expect(await prisma.ledger_entries.count({ where: { userId, type: 'DEBIT' } })).toBe(1);
     expect(await prisma.dedicated_line_orders.count({ where: { userId } })).toBe(1);

@@ -6,9 +6,13 @@ import { WalletRepository } from '../../wallet/wallet.repository';
 describe('metadata check', () => {
   it('should have decorator metadata', () => {
     const metadata = Reflect.getMetadata('design:paramtypes', ConfirmPaymentOrderUseCase);
-    console.log('Metadata:', metadata);
+    console.info('Metadata:', metadata);
     if (metadata) {
-      console.log('Param types:', metadata.map((t: any) => t?.name));
+      const paramTypes = metadata as unknown[];
+      console.info(
+        'Param types:',
+        paramTypes.map((type) => (typeof type === 'function' ? type.name : undefined)),
+      );
     }
     expect(metadata).toBeDefined();
     expect(metadata[1]).toBe(WalletRepository);

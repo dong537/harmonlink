@@ -86,12 +86,13 @@ export class OrdersRepository {
   }
 
   async list(
+    siteId: string,
     userId: string,
     tenantId: string,
     query: PageQueryDto,
   ): Promise<PageResult<Order>> {
     const { page, pageSize } = normalizePageQuery(query);
-    const where: Prisma.ordersWhereInput = { userId, tenantId };
+    const where: Prisma.ordersWhereInput = { siteId, userId, tenantId };
     if (query.status) where.status = query.status as OrderStatus;
 
     const [total, items] = await Promise.all([

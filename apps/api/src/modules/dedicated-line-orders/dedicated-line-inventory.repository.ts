@@ -4,14 +4,19 @@ import { prisma } from '@ipeasy/db';
 import { Prisma } from '@ipeasy/db/generated/client';
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { isUniqueConstraintError } from '../../common/errors/prisma-errors';
+import { toDecimalString } from '../../common/money/money';
 import { BARK_INVENTORY_LOW_TOPIC } from '../alerts/bark-alert-outbox.repository';
 import type { InventoryItem, ProviderCode } from '../providers/provider.types';
 import { inventoryFreshnessTtlSeconds } from '../resources/inventory-freshness';
 import { WalletRepository } from '../wallet/wallet.repository';
+import { lockActiveZone } from '../zones/zones.repository';
 import {
   type InventoryInsufficientResult,
   type InventoryLowAlert,
   type InventoryReservationSource,
+  type DedicatedLineOrderReplay,
+  type DedicatedLineOrderReplayRequest,
   type ReserveDedicatedLineStockInput,
   type ReserveDedicatedLineStockResult,
 } from './domain';
@@ -158,12 +163,138 @@ export class DedicatedLineInventoryRepository implements InventoryReservationSou
     return { snapshots, mappedSkus };
   }
 
+  /**
+   * Read the committed order for a scoped idempotency key without consulting
+   * any mutable saleability or provider state. This is intentionally separate
+   * from reserveAndEnqueue so callers can short-circuit retries before running
+   * catalog, inventory, placement, Zone, or quote checks.
+   */
+  async findOrderReplay(input: {
+    siteId: string;
+    tenantId: string;
+    userId: string;
+    idempotencyKey: string;
+    request: DedicatedLineOrderReplayRequest;
+  }): Promise<DedicatedLineOrderReplay | null> {
+    return prisma.$transaction(async (tx) => {
+      const reservation = await tx.stock_reservations.findUnique({
+        where: {
+          siteId_tenantId_userId_idempotencyKey: {
+            siteId: input.siteId,
+            tenantId: input.tenantId,
+            userId: input.userId,
+            idempotencyKey: input.idempotencyKey,
+          },
+        },
+        select: {
+          id: true,
+          inventorySnapshotId: true,
+          snapshotVersion: true,
+          dedicatedLineOrderId: true,
+          providerAccountId: true,
+          providerCode: true,
+          skuId: true,
+          countryCode: true,
+          quantity: true,
+        },
+      });
+      if (!reservation) return null;
+
+      const orderId = reservation.dedicatedLineOrderId;
+      if (!orderId) {
+        throw new AppError(ErrorCode.INTERNAL_ERROR, 'dedicated_line_order_snapshot_missing', 500);
+      }
+      const order = await tx.dedicated_line_orders.findFirst({
+        where: {
+          id: orderId,
+          siteId: input.siteId,
+          tenantId: input.tenantId,
+          userId: input.userId,
+        },
+        include: { zone: { select: { code: true } } },
+      });
+      if (!order) throw new AppError(ErrorCode.INTERNAL_ERROR, 'dedicated_line_order_snapshot_missing', 500);
+
+      if (!sameReplayRequest(order, input.request)) {
+        throw new AppError(ErrorCode.IDEMPOTENCY_CONFLICT, 'dedicated_line_order_idempotency_conflict', 409);
+      }
+      if (
+        reservation.providerCode.length === 0
+        || reservation.skuId !== order.skuId
+        || reservation.countryCode !== order.countryCode
+        || reservation.quantity !== order.quantity
+      ) {
+        throw new AppError(ErrorCode.INTERNAL_ERROR, 'dedicated_line_order_snapshot_missing', 500);
+      }
+
+      const job = await tx.external_jobs.findFirst({
+        where: {
+          siteId: input.siteId,
+          tenantId: input.tenantId,
+          userId: input.userId,
+          aggregateType: 'stock_reservation',
+          aggregateId: reservation.id,
+          kind: PROVIDER_ORDER_JOB_KIND,
+        },
+        select: { id: true, dedicatedLineOrderId: true },
+      });
+      if (!job) throw new AppError(ErrorCode.INTERNAL_ERROR, 'dedicated_line_order_job_missing', 500);
+      if (job.dedicatedLineOrderId !== order.id) {
+        throw new AppError(ErrorCode.INTERNAL_ERROR, 'dedicated_line_order_snapshot_missing', 500);
+      }
+
+      const ledger = await tx.ledger_entries.findUnique({
+        where: { idempotencyKey: expectedLedgerKey(input) },
+        select: {
+          idempotencyKey: true,
+          amount: true,
+          currency: true,
+          siteId: true,
+          tenantId: true,
+          userId: true,
+          relatedId: true,
+          type: true,
+          reason: true,
+        },
+      });
+      if (!ledger) throw new AppError(ErrorCode.INTERNAL_ERROR, 'dedicated_line_order_charge_missing', 500);
+      if (
+        ledger.siteId !== input.siteId
+        || ledger.tenantId !== input.tenantId
+        || ledger.userId !== input.userId
+        || ledger.relatedId !== reservation.id
+        || ledger.type !== 'DEBIT'
+        || ledger.reason !== 'dedicated_line_order'
+        || ledger.amount.toString() !== toDecimalString(`-${order.totalPrice.toString()}`)
+        || ledger.currency !== order.currency
+      ) {
+        throw new AppError(ErrorCode.INTERNAL_ERROR, 'dedicated_line_order_charge_missing', 500);
+      }
+
+      return {
+        status: 'QUEUED',
+        orderId: order.id,
+        reservationId: reservation.id,
+        jobId: job.id,
+        skuCode: order.skuCode,
+        countryCode: order.countryCode,
+        quantity: order.quantity,
+        durationDays: order.durationDays,
+        unitPrice: order.unitPrice.toString(),
+        totalPrice: order.totalPrice.toString(),
+        currency: order.currency,
+        priceSource: order.priceSource,
+        contractVersion: order.contractVersion,
+        replayed: true,
+      };
+    }, { timeout: 30000 });
+  }
+
   async reserveAndEnqueue(
     input: ReserveDedicatedLineStockInput,
   ): Promise<ReserveDedicatedLineStockResult | InventoryInsufficientResult> {
-    return prisma.$transaction(async (tx) => {
-      await assertScope(tx, input);
-
+    try {
+      return await prisma.$transaction(async (tx) => {
       const existing = await tx.stock_reservations.findUnique({
         where: {
           siteId_tenantId_userId_idempotencyKey: {
@@ -174,7 +305,20 @@ export class DedicatedLineInventoryRepository implements InventoryReservationSou
           },
         },
       });
+      // A committed reservation is the idempotency source of truth. Replay
+      // validates its immutable scope, order, job, and charge below; it must
+      // not re-run current SKU/provider/Zone saleability checks because those
+      // resources may legitimately be disabled after the original purchase.
       if (existing) return replayExisting(tx, input, existing);
+
+      await assertScope(tx, input);
+      if (input.zoneId) {
+        await lockActiveZone(tx, {
+          siteId: input.siteId,
+          tenantId: input.tenantId,
+          userId: input.userId,
+        }, input.zoneId);
+      }
 
       const now = new Date();
       const snapshot = await tx.dedicated_line_inventory_snapshots.findFirst({
@@ -194,10 +338,26 @@ export class DedicatedLineInventoryRepository implements InventoryReservationSou
         UPDATE "dedicated_line_inventory_snapshots"
         SET "reservedQuantity" = "reservedQuantity" + ${input.quantity}
         WHERE "id" = ${snapshot.id}
-          AND "expiresAt" > ${now}
+          AND "expiresAt" > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
           AND "quantity" - "reservedQuantity" >= ${input.quantity}
       `);
       if (claimed !== 1) {
+        // A request with the same idempotency key may have won the order
+        // insert while this transaction waited on the snapshot row lock. Read
+        // the reservation after that wait before reporting out-of-stock; the
+        // key must replay, even when the winner consumed the last unit.
+        const existingAfterClaim = await tx.stock_reservations.findUnique({
+          where: {
+            siteId_tenantId_userId_idempotencyKey: {
+              siteId: input.siteId,
+              tenantId: input.tenantId,
+              userId: input.userId,
+              idempotencyKey: input.idempotencyKey,
+            },
+          },
+        });
+        if (existingAfterClaim) return replayExisting(tx, input, existingAfterClaim);
+
         const current = await tx.dedicated_line_inventory_snapshots.findUnique({ where: { id: snapshot.id } });
         return insufficient(
           input,
@@ -211,6 +371,7 @@ export class DedicatedLineInventoryRepository implements InventoryReservationSou
           siteId: input.siteId,
           tenantId: input.tenantId,
           userId: input.userId,
+          zoneId: input.zoneId,
           skuId: input.skuId,
           skuCode: input.orderSnapshot.skuCode.trim(),
           skuName: input.orderSnapshot.skuName.trim(),
@@ -298,6 +459,50 @@ export class DedicatedLineInventoryRepository implements InventoryReservationSou
         sourceVersion: snapshot.sourceVersion,
         replayed: false,
       };
+      }, { timeout: 30000 });
+    } catch (error: unknown) {
+      // A concurrent request with the same scoped key can pass the initial
+      // lookup before the winner commits and then lose on a unique index. The
+      // failed transaction is already rolled back; replay from a fresh
+      // transaction so we never query an aborted PostgreSQL transaction.
+      if (!isScopedReservationIdempotencyConflict(error)) throw error;
+      return this.replayAfterUniqueConflict(input, error);
+    }
+  }
+
+  private async replayAfterUniqueConflict(
+    input: ReserveDedicatedLineStockInput,
+    originalError: unknown,
+  ): Promise<ReserveDedicatedLineStockResult> {
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.stock_reservations.findUnique({
+        where: {
+          siteId_tenantId_userId_idempotencyKey: {
+            siteId: input.siteId,
+            tenantId: input.tenantId,
+            userId: input.userId,
+            idempotencyKey: input.idempotencyKey,
+          },
+        },
+      });
+      // Preserve unrelated unique violations. A replay is valid only when the
+      // scoped reservation that owns this idempotency key actually exists.
+      if (!existing) {
+        const order = await tx.dedicated_line_orders.findFirst({
+          where: {
+            siteId: input.siteId,
+            tenantId: input.tenantId,
+            userId: input.userId,
+            idempotencyKey: input.idempotencyKey,
+          },
+          select: { id: true },
+        });
+        if (order) {
+          throw new AppError(ErrorCode.IDEMPOTENCY_CONFLICT, 'dedicated_line_order_idempotency_conflict', 409);
+        }
+        throw originalError;
+      }
+      return replayExisting(tx, input, existing);
     }, { timeout: 30000 });
   }
 
@@ -346,6 +551,29 @@ export class DedicatedLineInventoryRepository implements InventoryReservationSou
   }
 }
 
+function sameReplayRequest(
+  order: {
+    skuCode: string;
+    countryCode: string;
+    quantity: number;
+    durationDays: number;
+    currency: string;
+    regionCode: string | null;
+    businessType: string | null;
+    zone: { code: string } | null;
+  },
+  request: DedicatedLineOrderReplayRequest,
+): boolean {
+  return order.skuCode === request.skuCode
+    && order.countryCode === request.countryCode
+    && order.quantity === request.quantity
+    && order.durationDays === request.durationDays
+    && order.currency === request.currency
+    && order.regionCode === request.regionCode
+    && order.businessType === request.businessType
+    && (order.zone?.code ?? null) === request.zoneCode;
+}
+
 function isDedicatedLineSku(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   return (value as Record<string, unknown>)['delivery'] === 'dedicated-line';
@@ -380,18 +608,11 @@ async function replayExisting(
   input: ReserveDedicatedLineStockInput,
   existing: Awaited<ReturnType<Prisma.TransactionClient['stock_reservations']['findUniqueOrThrow']>>,
 ): Promise<ReserveDedicatedLineStockResult> {
-  if (
-    existing.providerAccountId !== input.providerAccountId
-    || existing.providerCode !== input.providerCode
-    || existing.skuId !== input.skuId
-    || existing.countryCode !== input.countryCode
-    || existing.quantity !== input.quantity
-  ) {
-    throw new AppError(ErrorCode.IDEMPOTENCY_CONFLICT, 'dedicated_line_order_idempotency_conflict', 409);
-  }
   const job = await tx.external_jobs.findFirst({
     where: {
       siteId: input.siteId,
+      tenantId: input.tenantId,
+      userId: input.userId,
       aggregateType: 'stock_reservation',
       aggregateId: existing.id,
       kind: PROVIDER_ORDER_JOB_KIND,
@@ -402,10 +623,27 @@ async function replayExisting(
   if (!existing.dedicatedLineOrderId || job.dedicatedLineOrderId !== existing.dedicatedLineOrderId) {
     throw new AppError(ErrorCode.INTERNAL_ERROR, 'dedicated_line_order_snapshot_missing', 500);
   }
-  const order = await tx.dedicated_line_orders.findUnique({ where: { id: existing.dedicatedLineOrderId } });
-  if (!order || !sameOrderSnapshot(order, input)) {
+  const order = await tx.dedicated_line_orders.findFirst({
+    where: {
+      id: existing.dedicatedLineOrderId,
+      siteId: input.siteId,
+      tenantId: input.tenantId,
+      userId: input.userId,
+    },
+    include: { zone: { select: { code: true } } },
+  });
+  if (!order) {
+    throw new AppError(ErrorCode.INTERNAL_ERROR, 'dedicated_line_order_snapshot_missing', 500);
+  }
+  if (
+    existing.skuId !== order.skuId
+    || existing.countryCode !== order.countryCode
+    || existing.quantity !== order.quantity
+    || !sameOrderSnapshot(order, input)
+  ) {
     throw new AppError(ErrorCode.IDEMPOTENCY_CONFLICT, 'dedicated_line_order_idempotency_conflict', 409);
   }
+  await assertReplayCharge(tx, input, existing.id, order.totalPrice.toString(), order.currency);
   return {
     kind: 'RESERVED',
     orderId: existing.dedicatedLineOrderId,
@@ -419,32 +657,91 @@ async function replayExisting(
 
 function sameOrderSnapshot(
   order: {
+    siteId: string;
+    tenantId: string;
+    userId: string;
+    zoneId: string | null;
     skuCode: string;
-    skuName: string;
     regionCode: string | null;
     businessType: string | null;
     durationDays: number;
     quantity: number;
-    unitPrice: Prisma.Decimal;
-    totalPrice: Prisma.Decimal;
+    countryCode: string;
     currency: string;
-    priceSource: string;
-    contractVersion: number;
+    zone: { code: string } | null;
   },
   input: ReserveDedicatedLineStockInput,
 ): boolean {
   const snapshot = input.orderSnapshot;
+  const zoneMatches = input.zoneCode === undefined || input.zoneCode === null
+    ? order.zoneId === (input.zoneId ?? null)
+    : (order.zone?.code ?? null) === (input.zoneCode.trim().toLowerCase() || null);
   return order.skuCode === snapshot.skuCode.trim()
-    && order.skuName === snapshot.skuName.trim()
+    && order.siteId === input.siteId
+    && order.tenantId === input.tenantId
+    && order.userId === input.userId
+    && zoneMatches
     && order.regionCode === (snapshot.regionCode?.trim() || null)
     && order.businessType === (snapshot.businessType?.trim() || null)
     && order.durationDays === snapshot.durationDays
     && order.quantity === input.quantity
-    && order.unitPrice.toString() === snapshot.unitPrice
-    && order.totalPrice.toString() === snapshot.totalPrice
-    && order.currency === snapshot.currency.trim().toUpperCase()
-    && order.priceSource === snapshot.priceSource.trim()
-    && order.contractVersion === snapshot.contractVersion;
+    && order.countryCode === input.countryCode
+    && order.currency === snapshot.currency.trim().toUpperCase();
+}
+
+async function assertReplayCharge(
+  tx: Prisma.TransactionClient,
+  input: ReserveDedicatedLineStockInput,
+  reservationId: string,
+  orderTotalPrice: string,
+  orderCurrency: string,
+): Promise<void> {
+  const wallet = await tx.wallets.findFirst({
+    where: { siteId: input.siteId, tenantId: input.tenantId, userId: input.userId },
+    select: { id: true },
+  });
+  if (!wallet) throw new AppError(ErrorCode.INTERNAL_ERROR, 'dedicated_line_order_wallet_missing', 500);
+
+  const ledger = await tx.ledger_entries.findFirst({
+    where: {
+      siteId: input.siteId,
+      tenantId: input.tenantId,
+      userId: input.userId,
+      walletId: wallet.id,
+      relatedId: reservationId,
+      type: 'DEBIT',
+      reason: 'dedicated_line_order',
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (!ledger) throw new AppError(ErrorCode.INTERNAL_ERROR, 'dedicated_line_order_charge_missing', 500);
+
+  const expectedAmount = toDecimalString(`-${orderTotalPrice}`);
+  const expectedCurrency = orderCurrency.trim().toUpperCase();
+  if (
+    ledger.idempotencyKey !== expectedLedgerKey(input)
+    || ledger.amount.toString() !== expectedAmount
+    || ledger.currency !== expectedCurrency
+    || ledger.relatedId !== reservationId
+  ) {
+    throw new AppError(ErrorCode.IDEMPOTENCY_CONFLICT, 'dedicated_line_order_idempotency_conflict', 409);
+  }
+}
+
+function expectedLedgerKey(input: Pick<ReserveDedicatedLineStockInput, 'siteId' | 'tenantId' | 'userId' | 'idempotencyKey'>): string {
+  return `dedicated-line-order:${input.siteId}:${input.tenantId}:${input.userId}:${input.idempotencyKey}`;
+}
+
+function isScopedReservationIdempotencyConflict(error: unknown): boolean {
+  if (!isUniqueConstraintError(error)) return false;
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  const target = error.meta?.['target'];
+  const fields = Array.isArray(target) ? target.map(String) : typeof target === 'string' ? [target] : [];
+  if (fields.includes('stock_reservations_scoped_idempotency_key') || fields.includes('dedicated_line_orders_scoped_idempotency_key')) {
+    return true;
+  }
+  const scopedFields = ['siteId', 'tenantId', 'userId', 'idempotencyKey'];
+  return fields.length === scopedFields.length && scopedFields.every((field) => fields.includes(field));
 }
 
 function insufficient(

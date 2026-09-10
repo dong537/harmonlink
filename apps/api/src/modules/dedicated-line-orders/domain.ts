@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
 
@@ -31,6 +32,9 @@ export interface ReserveDedicatedLineStockInput {
   siteId: string;
   tenantId: string;
   userId: string;
+  zoneId?: string | null;
+  /** Normalized user-facing Zone code used for stable idempotency replay checks. */
+  zoneCode?: string | null;
   providerCode: string;
   providerAccountId: string;
   skuId: string;
@@ -56,6 +60,38 @@ export interface ReserveDedicatedLineStockInput {
   };
   jobPayload: DedicatedLineOrderRequestDraft;
 }
+
+/**
+ * The immutable request fields used to validate a replay before consulting
+ * any current catalog, inventory, placement, or provider state.
+ */
+export type DedicatedLineOrderReplayRequest = {
+  skuCode: string;
+  countryCode: string;
+  quantity: number;
+  durationDays: number;
+  currency: string;
+  regionCode: string | null;
+  businessType: string | null;
+  zoneCode: string | null;
+};
+
+export type DedicatedLineOrderReplay = {
+  status: 'QUEUED';
+  orderId: string;
+  reservationId: string;
+  jobId: string;
+  skuCode: string;
+  countryCode: string;
+  quantity: number;
+  durationDays: number;
+  unitPrice: string;
+  totalPrice: string;
+  currency: string;
+  priceSource: string;
+  contractVersion: number;
+  replayed: true;
+};
 
 export type InventoryLowAlert = {
   siteId: string;
@@ -101,12 +137,15 @@ export interface InventoryReservationSource {
 }
 
 export class ReserveDedicatedLineStockUseCase {
+  private readonly logger = new Logger(ReserveDedicatedLineStockUseCase.name);
+
   constructor(private readonly source: InventoryReservationSource) {}
 
   async execute(input: ReserveDedicatedLineStockInput): Promise<ReserveDedicatedLineStockResult> {
     assertInput(input);
     const normalizedInput = {
       ...input,
+      zoneId: input.zoneId ?? null,
       providerCode: input.providerCode.trim(),
       countryCode: input.countryCode.trim().toUpperCase(),
       idempotencyKey: input.idempotencyKey.trim(),
@@ -114,13 +153,7 @@ export class ReserveDedicatedLineStockUseCase {
 
     const result = await this.source.reserveAndEnqueue(normalizedInput);
     if (result.kind === 'INSUFFICIENT') {
-      await this.source.enqueueInventoryLowAlert({
-        siteId: normalizedInput.siteId,
-        tenantId: normalizedInput.tenantId,
-        userId: normalizedInput.userId,
-        ...result,
-      });
-      throw new AppError(ErrorCode.UPSTREAM_OUT_OF_STOCK, 'dedicated_line_inventory_insufficient', 422, undefined, {
+      const outOfStock = new AppError(ErrorCode.UPSTREAM_OUT_OF_STOCK, 'dedicated_line_inventory_insufficient', 422, undefined, {
         providerCode: result.providerCode,
         skuId: result.skuId,
         countryCode: result.countryCode,
@@ -128,6 +161,22 @@ export class ReserveDedicatedLineStockUseCase {
         availableQuantity: result.availableQuantity,
         sourceVersion: result.sourceVersion,
       });
+      try {
+        await this.source.enqueueInventoryLowAlert({
+          siteId: normalizedInput.siteId,
+          tenantId: normalizedInput.tenantId,
+          userId: normalizedInput.userId,
+          ...result,
+        });
+      } catch (error: unknown) {
+        // Alerting is a side channel. Preserve the truthful 422 even when the
+        // outbox/database is unavailable, while leaving an operator-visible trace.
+        this.logger.error(
+          `inventory_low_alert_enqueue_failed site=${normalizedInput.siteId} sku=${result.skuId} country=${result.countryCode}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
+      throw outOfStock;
     }
 
     return result;
@@ -146,6 +195,9 @@ function assertInput(input: ReserveDedicatedLineStockInput): void {
   }
   if (!input.idempotencyKey.trim()) {
     throw new AppError(ErrorCode.VALIDATION_ERROR, 'idempotency_key_required', 400);
+  }
+  if (input.zoneId !== undefined && input.zoneId !== null && (typeof input.zoneId !== 'string' || !input.zoneId.trim())) {
+    throw new AppError(ErrorCode.VALIDATION_ERROR, 'zone_id_invalid', 400);
   }
   if (!input.charge || typeof input.charge.amount !== 'string' || !input.charge.amount.trim()) {
     throw new AppError(ErrorCode.VALIDATION_ERROR, 'dedicated_line_charge_required', 400);

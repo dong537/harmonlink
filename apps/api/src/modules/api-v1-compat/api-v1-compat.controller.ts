@@ -19,12 +19,15 @@ import { DedicatedLineDeliveryUseCase } from '../dedicated-lines/dedicated-line-
 import { RenewDedicatedLineUseCase } from '../dedicated-lines/renew-dedicated-line.use-case';
 import { GetMeUseCase } from '../users/use-cases/get-me.use-case';
 import { WalletRepository } from '../wallet/wallet.repository';
+import { ResolveActiveZoneUseCase } from '../zones/use-cases';
+import { authBody } from '../auth/auth-input';
 import {
   toCapabilitiesResponse,
   toLegacyLineDto,
   toLegacySkuDto,
   type CompatLine,
 } from './api-v1-compat.mapper';
+import { assertLegacyApiAccess } from './legacy-site-access';
 
 type LegacyLoginBody = { email?: unknown; password?: unknown };
 type LegacyDedicatedBody = {
@@ -33,6 +36,7 @@ type LegacyDedicatedBody = {
   country?: unknown;
   protocol?: unknown;
   idempotencyKey?: unknown;
+  zoneCode?: unknown;
 };
 
 @Controller('v1')
@@ -50,6 +54,7 @@ export class ApiV1CompatController {
     private readonly renew: RenewDedicatedLineUseCase,
     private readonly getMe: GetMeUseCase,
     private readonly wallet: WalletRepository,
+    private readonly resolveZone: ResolveActiveZoneUseCase,
   ) {}
 
   @Get('health')
@@ -66,7 +71,7 @@ export class ApiV1CompatController {
 
   @Post('auth/login')
   async loginUser(@Body() body: LegacyLoginBody) {
-    return this.loginLegacy(body, 'USER');
+    return this.loginLegacy(body);
   }
 
   @Post('auth/admin-login')
@@ -101,7 +106,7 @@ export class ApiV1CompatController {
   @Get('auth/me')
   @RequireAuth()
   me(@CurrentContext() ctx: AuthenticatedContext) {
-    this.assertEnabled();
+    this.assertEnabled(ctx);
     return {
       ownerId: ctx.ownerId,
       ownerType: ctx.ownerType,
@@ -114,7 +119,7 @@ export class ApiV1CompatController {
   @Post('auth/logout')
   @RequireAuth()
   async logoutUser(@CurrentContext() ctx: AuthenticatedContext, @Req() req: FastifyRequest) {
-    this.assertEnabled();
+    this.assertEnabled(ctx);
     await this.logout.execute(ctx, req.sessionId ?? '');
     return { ok: true };
   }
@@ -122,7 +127,7 @@ export class ApiV1CompatController {
   @Get('users/profile')
   @RequireUser()
   async profile(@CurrentContext() ctx: AuthenticatedContext) {
-    this.assertEnabled();
+    this.assertEnabled(ctx);
     const [profile, wallet] = await Promise.all([
       this.getMe.execute(ctx),
       this.wallet.getWalletByUserId(ctx.ownerId, ctx.siteId, ctx.tenantId),
@@ -138,7 +143,7 @@ export class ApiV1CompatController {
   @Get('dedicated-skus')
   @RequireUser()
   async dedicatedSkus(@CurrentContext() ctx: AuthenticatedContext) {
-    this.assertEnabled();
+    this.assertEnabled(ctx);
     if (!ctx.tenantId) throw new AppError(ErrorCode.PERMISSION_DENIED, 'tenant_required', 403);
     const skus = await this.catalog.listSaleableSkusForBuyer(ctx.siteId, ctx.tenantId, ctx.ownerId);
     return skus.map(toLegacySkuDto);
@@ -147,7 +152,7 @@ export class ApiV1CompatController {
   @Get('dedicated/locations')
   @RequireUser()
   async dedicatedLocations(@CurrentContext() ctx: AuthenticatedContext) {
-    this.assertEnabled();
+    this.assertEnabled(ctx);
     if (!ctx.tenantId) throw new AppError(ErrorCode.PERMISSION_DENIED, 'tenant_required', 403);
     const locations = await this.inventory.listFreshLocations({ siteId: ctx.siteId, tenantId: ctx.tenantId });
     return locations.map((location) => ({
@@ -160,8 +165,13 @@ export class ApiV1CompatController {
   @Post('dedicated/preview')
   @RequireUser()
   async dedicatedPreview(@CurrentContext() ctx: AuthenticatedContext, @Body() body: LegacyDedicatedBody) {
-    this.assertEnabled();
+    this.assertEnabled(ctx);
     const input = await this.parseDedicatedInput(ctx, body, false);
+    await this.resolveZone.execute({
+      siteId: ctx.siteId,
+      tenantId: ctx.tenantId!,
+      userId: ctx.ownerId,
+    }, readOptionalZoneCode(body?.zoneCode));
     const result = await this.quote.execute({
       siteId: ctx.siteId,
       tenantId: ctx.tenantId!,
@@ -191,7 +201,7 @@ export class ApiV1CompatController {
     @Body() body: LegacyDedicatedBody,
     @Headers('idempotency-key') idempotencyHeader?: string,
   ) {
-    this.assertEnabled();
+    this.assertEnabled(ctx);
     const input = await this.parseDedicatedInput(ctx, body, true);
     const result = await this.createOrder.execute(ctx, {
       skuCode: input.skuCode,
@@ -200,6 +210,7 @@ export class ApiV1CompatController {
       durationDays: input.durationDays,
       currency: input.currency,
       idempotencyKey: readOptionalString(body.idempotencyKey) ?? idempotencyHeader?.trim() ?? randomUUID(),
+      zoneCode: readOptionalZoneCode(body.zoneCode),
     });
     return {
       ...result,
@@ -217,7 +228,7 @@ export class ApiV1CompatController {
   @Get('dedicated/my')
   @RequireUser()
   async dedicatedMine(@CurrentContext() ctx: AuthenticatedContext) {
-    this.assertEnabled();
+    this.assertEnabled(ctx);
     const lines = await this.delivery.list(ctx);
     return lines.map((line) => toLegacyLineDto(line as unknown as CompatLine));
   }
@@ -227,30 +238,31 @@ export class ApiV1CompatController {
   async dedicatedRenew(
     @CurrentContext() ctx: AuthenticatedContext,
     @Param('id') legacyId: string,
-    @Body() body: { durationDays?: unknown; idempotencyKey?: unknown },
+    @Body() body: { durationDays?: unknown; idempotencyKey?: unknown; zoneCode?: unknown },
     @Headers('idempotency-key') idempotencyHeader?: string,
   ) {
-    this.assertEnabled();
+    this.assertEnabled(ctx);
     const lineId = await this.resolveLineId(ctx, legacyId);
     const durationDays = readPositiveInteger(body?.durationDays, 'durationDays');
     const result = await this.renew.execute(ctx, lineId, {
       durationDays,
       idempotencyKey: readOptionalString(body?.idempotencyKey) ?? idempotencyHeader?.trim() ?? randomUUID(),
+      zoneCode: readOptionalZoneCode(body?.zoneCode),
     });
     return { ...result, id: Number(legacyId), proxyId: Number(legacyId) };
   }
 
   @Post('dedicated/:id/lock')
   @RequireUser()
-  lock() {
-    this.assertEnabled();
+  lock(@CurrentContext() ctx: AuthenticatedContext) {
+    this.assertEnabled(ctx);
     throw new AppError(ErrorCode.UNSUPPORTED_CAPABILITY, 'dedicated_line_upstream_lock_unavailable', 409);
   }
 
   @Get('dedicated/:id/qrcode')
   @RequireUser()
   async dedicatedQr(@CurrentContext() ctx: AuthenticatedContext, @Param('id') legacyId: string) {
-    this.assertEnabled();
+    this.assertEnabled(ctx);
     const lineId = await this.resolveLineId(ctx, legacyId);
     const line = await this.delivery.get(ctx, lineId);
     const mapped = toLegacyLineDto(line as unknown as CompatLine);
@@ -265,7 +277,7 @@ export class ApiV1CompatController {
     @Param('id') legacyId: string,
     @Body() body: { remark?: unknown },
   ) {
-    this.assertEnabled();
+    this.assertEnabled(ctx);
     const lineId = await this.resolveLineId(ctx, legacyId);
     const remark = readNullableRemark(body?.remark);
     const updated = await prisma.dedicated_lines.updateMany({
@@ -276,11 +288,15 @@ export class ApiV1CompatController {
     return { id: Number(legacyId), remark };
   }
 
-  private async loginLegacy(body: LegacyLoginBody, expectedOwnerType: 'USER' | 'ADMIN_USER') {
+  private async loginLegacy(body: LegacyLoginBody, expectedOwnerType?: 'USER' | 'ADMIN_USER') {
     const siteId = this.assertEnabled();
-    const email = readString(body.email, 'email');
-    const password = readString(body.password, 'password');
-    const result = await this.login.executeLegacy({ email, password, siteId }, expectedOwnerType);
+    const input = authBody(body, 'login_body_invalid');
+    const email = readString(input.email, 'email');
+    const password = readString(input.password, 'password');
+    const credentials = { email, password, siteId };
+    const result = expectedOwnerType
+      ? await this.login.executeLegacy(credentials, expectedOwnerType)
+      : await this.login.executeLegacy(credentials);
     return {
       access_token: result.token,
       refresh_token: result.refreshToken,
@@ -290,7 +306,9 @@ export class ApiV1CompatController {
 
   private async legacyUserForIdentity(identity: { ownerType: 'USER' | 'ADMIN_USER'; ownerId: string; siteId: string; tenantId: string | null; email: string; name: string | null; role: string }) {
     if (identity.ownerType !== 'USER') {
-      return { id: identity.ownerId, email: identity.email, role: identity.role };
+      // The frozen client recognizes the legacy sentinel `admin`; keep the
+      // canonical database role as the session owner's authorization source.
+      return { id: identity.ownerId, email: identity.email, role: 'admin' };
     }
     const wallet = await this.wallet.getWalletByUserId(identity.ownerId, identity.siteId, identity.tenantId);
     return {
@@ -310,9 +328,9 @@ export class ApiV1CompatController {
       const wallet = await this.wallet.getWalletByUserId(owner.ownerId, owner.siteId, owner.tenantId);
       return { id: owner.ownerId, email: profile.email, name: profile.name, role: 'user', balance: wallet.available.toString(), currency: wallet.currency };
     }
-    const admin = await prisma.admin_users.findFirst({ where: { id: owner.ownerId, siteId: owner.siteId }, select: { email: true, role: true } });
+    const admin = await prisma.admin_users.findFirst({ where: { id: owner.ownerId, siteId: owner.siteId }, select: { email: true } });
     if (!admin) throw new AppError(ErrorCode.AUTH_REQUIRED, 'session_expired', 401);
-    return { id: owner.ownerId, email: admin.email, role: String(admin.role).toLowerCase() };
+    return { id: owner.ownerId, email: admin.email, role: 'admin' };
   }
 
   private async parseDedicatedInput(ctx: AuthenticatedContext, body: LegacyDedicatedBody, requireCountry: boolean) {
@@ -330,6 +348,9 @@ export class ApiV1CompatController {
   }
 
   private async resolveLineId(ctx: AuthenticatedContext, legacyId: string): Promise<string> {
+    if (!/^[1-9]\d*$/.test(legacyId)) {
+      throw new AppError(ErrorCode.VALIDATION_ERROR, 'dedicated_line_id_invalid', 400);
+    }
     const numericId = Number(legacyId);
     if (!Number.isSafeInteger(numericId) || numericId < 1) throw new AppError(ErrorCode.VALIDATION_ERROR, 'dedicated_line_id_invalid', 400);
     const line = await prisma.dedicated_lines.findFirst({
@@ -340,13 +361,8 @@ export class ApiV1CompatController {
     return line.id;
   }
 
-  private assertEnabled(): string {
-    if (this.config.get('LEGACY_API_V1_ENABLED') !== 'true') {
-      throw new AppError(ErrorCode.NOT_FOUND, 'legacy_api_disabled', 404);
-    }
-    const siteId = this.config.get('LEGACY_API_SITE_ID').trim();
-    if (!siteId) throw new AppError(ErrorCode.INTERNAL_ERROR, 'legacy_api_site_not_configured', 500);
-    return siteId;
+  private assertEnabled(context?: Pick<AuthenticatedContext, 'siteId'>): string {
+    return assertLegacyApiAccess(this.config, context);
   }
 }
 
@@ -358,6 +374,14 @@ function readString(value: unknown, field: string): string {
 
 function readOptionalString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function readOptionalZoneCode(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string') {
+    throw new AppError(ErrorCode.VALIDATION_ERROR, 'zone_code_invalid', 400);
+  }
+  return value;
 }
 
 function readPositiveInteger(value: unknown, field: string): number {

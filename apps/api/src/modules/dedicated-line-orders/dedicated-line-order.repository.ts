@@ -151,6 +151,18 @@ export class DedicatedLineOrderRepository {
         if (!job.dedicatedLineOrderId) {
           throw new AppError(ErrorCode.DEDICATED_LINE_CONFIG_INVALID, 'dedicated_line_order_snapshot_missing', 422);
         }
+        const order = await tx.dedicated_line_orders.findFirst({
+          where: {
+            id: job.dedicatedLineOrderId,
+            siteId: job.siteId,
+            tenantId: job.tenantId,
+            userId: job.userId,
+          },
+          select: { zoneId: true },
+        });
+        if (!order) {
+          throw new AppError(ErrorCode.DEDICATED_LINE_CONFIG_INVALID, 'dedicated_line_order_snapshot_missing', 422);
+        }
         for (const exit of input.exits) {
           if (
             exit.inboundProfileId !== policy.inboundProfileId
@@ -189,6 +201,7 @@ export class DedicatedLineOrderRepository {
               siteId: job.siteId,
               tenantId: job.tenantId!,
               userId: job.userId!,
+              zoneId: order.zoneId,
               skuId: input.skuId,
               dedicatedLineOrderId: job.dedicatedLineOrderId,
               inboundProfileId: exit.inboundProfileId,

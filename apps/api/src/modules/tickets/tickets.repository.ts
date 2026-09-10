@@ -12,7 +12,7 @@ export type TicketDetailWithUser = Prisma.ticketsGetPayload<{
   include: { messages: true; user: { select: { id: true; email: true } } };
 }>;
 
-interface OwnerScope {
+export interface OwnerScope {
   ownerId: string;
   siteId: string;
   tenantId: string;
@@ -23,7 +23,7 @@ interface OwnerScope {
  * a concrete value narrows to that tenant (TENANT_ADMIN). Never filters by
  * ownerId, so admins can read tickets they do not own — but only within scope.
  */
-interface AdminScope {
+export interface AdminScope {
   siteId: string;
   tenantId: string | null;
 }
@@ -86,6 +86,34 @@ export class TicketsRepository {
       }),
     ]);
     return { page, pageSize, total, items };
+  }
+
+  async resolveOwnedLegacyId(legacyId: number, owner: OwnerScope): Promise<string> {
+    const ticket = await prisma.tickets.findFirst({
+      where: {
+        legacyId,
+        userId: owner.ownerId,
+        siteId: owner.siteId,
+        tenantId: owner.tenantId,
+      },
+      select: { id: true },
+    });
+    if (!ticket) throw new AppError(ErrorCode.NOT_FOUND, 'ticket_not_found', 404);
+    return ticket.id;
+  }
+
+  async mapLegacyIdsForOwner(owner: OwnerScope, ids: string[]): Promise<Map<string, number>> {
+    if (ids.length === 0) return new Map();
+    const tickets = await prisma.tickets.findMany({
+      where: {
+        id: { in: ids },
+        userId: owner.ownerId,
+        siteId: owner.siteId,
+        tenantId: owner.tenantId,
+      },
+      select: { id: true, legacyId: true },
+    });
+    return new Map(tickets.map((ticket) => [ticket.id, ticket.legacyId]));
   }
 
   /**
@@ -158,6 +186,15 @@ export class TicketsRepository {
     const where: Prisma.ticketsWhereInput = { siteId: scope.siteId };
     if (scope.tenantId) where.tenantId = scope.tenantId;
     return where;
+  }
+
+  async resolveLegacyIdForScope(legacyId: number, scope: AdminScope): Promise<string> {
+    const ticket = await prisma.tickets.findFirst({
+      where: { legacyId, ...this.adminWhere(scope) },
+      select: { id: true },
+    });
+    if (!ticket) throw new AppError(ErrorCode.NOT_FOUND, 'ticket_not_found', 404);
+    return ticket.id;
   }
 
   async listForScope(

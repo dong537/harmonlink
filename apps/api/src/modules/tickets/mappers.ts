@@ -9,6 +9,7 @@ import {
 export function toTicketListItem(ticket: Ticket): TicketListItemDto {
   return {
     id: ticket.id,
+    ...(ticket.legacyId !== undefined ? { legacyId: ticket.legacyId } : {}),
     subject: ticket.subject,
     status: ticket.status,
     createdAt: ticket.createdAt,
@@ -19,6 +20,7 @@ export function toTicketListItem(ticket: Ticket): TicketListItemDto {
 export function toTicketDetail(ticket: TicketWithMessages): TicketDetailDto {
   return {
     id: ticket.id,
+    ...(ticket.legacyId !== undefined ? { legacyId: ticket.legacyId } : {}),
     subject: ticket.subject,
     status: ticket.status,
     createdAt: ticket.createdAt,
@@ -36,6 +38,7 @@ export function toTicketDetail(ticket: TicketWithMessages): TicketDetailDto {
 export function toAdminTicketListItem(ticket: TicketWithUser): AdminTicketListItemDto {
   return {
     id: ticket.id,
+    ...(ticket.legacyId !== undefined ? { legacyId: ticket.legacyId } : {}),
     subject: ticket.subject,
     status: ticket.status,
     userId: ticket.userId,
@@ -48,6 +51,7 @@ export function toAdminTicketListItem(ticket: TicketWithUser): AdminTicketListIt
 export function toAdminTicketDetail(ticket: TicketDetailWithUser): AdminTicketDetailDto {
   return {
     id: ticket.id,
+    ...(ticket.legacyId !== undefined ? { legacyId: ticket.legacyId } : {}),
     subject: ticket.subject,
     status: ticket.status,
     userId: ticket.userId,

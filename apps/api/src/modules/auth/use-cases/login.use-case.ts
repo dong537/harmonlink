@@ -37,7 +37,7 @@ export class LoginUseCase {
     return { token, expiresAt };
   }
 
-  async executeLegacy(input: unknown, expectedOwnerType: 'USER' | 'ADMIN_USER'): Promise<LegacyLoginResult> {
+  async executeLegacy(input: unknown, expectedOwnerType?: 'USER' | 'ADMIN_USER'): Promise<LegacyLoginResult> {
     const identity = await this.authenticate(input, expectedOwnerType);
     const access = await this.authRepo.issueSession(identity);
     const refresh = await this.authRepo.issueRefreshSession(identity);

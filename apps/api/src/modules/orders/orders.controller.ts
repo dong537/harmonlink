@@ -58,7 +58,7 @@ export class OrdersController {
     @Query() query: OrderListQuery,
   ): Promise<PageResult<unknown>> {
     if (ctx.ownerType === 'USER') {
-      return this.ordersRepo.list(ctx.ownerId, requireTenantId(ctx), query);
+      return this.ordersRepo.list(ctx.siteId, ctx.ownerId, requireTenantId(ctx), query);
     }
     if (ctx.ownerType === 'TENANT_ADMIN') {
       return this.ordersRepo.listForAdmin(ctx.siteId, requireTenantId(ctx), query);

@@ -18,12 +18,17 @@ import { NestFastifyApplication, FastifyAdapter } from '@nestjs/platform-fastify
 import supertest from 'supertest';
 import { prisma } from '@ipeasy/db';
 import { AppModule } from '../app.module';
+import { ConfigService } from '../common/config/config.service';
 import { EnvelopeInterceptor } from '../common/interceptors/envelope.interceptor';
 import { AppExceptionFilter } from '../common/errors/exception-filter';
-import { ConfigService } from '../common/config/config.service';
-import type { EnvConfig } from '../common/config/env.schema';
+import { env, type EnvConfig } from '../common/config/env.schema';
 import { configureGlobalPrefix } from '../common/http/res-static-compat';
+import { createLegacyApiV1RewriteUrl } from '../common/http/legacy-api-v1';
 import { encryptAesGcm } from '../common/crypto/aes-gcm';
+import {
+  assertDisposableDatabaseConnection,
+  resolveDisposableDatabaseUrl,
+} from './integration-database-url';
 
 export type TestRequest = ReturnType<typeof supertest>;
 
@@ -31,19 +36,50 @@ export async function createTestApp(options?: {
   config?: Partial<EnvConfig>;
   beforeInit?: (app: NestFastifyApplication) => void;
 }): Promise<NestFastifyApplication> {
-  // Merge config into process.env so ConfigService reads it naturally
-  if (options?.config) {
-    const mergedConfig = { ...defaultTestConfig, ...process.env, ...options.config };
-    Object.assign(process.env, mergedConfig);
-  }
+  const databaseUrl = resolveDisposableDatabaseUrl();
+
+  // Keep process.env/env aligned for modules that read the validated singleton
+  // directly (health, logging), but inject a per-app ConfigService snapshot so
+  // two apps in one Vitest file cannot mutate each other's feature flags.
+  const mergedConfig = {
+    ...defaultTestConfig,
+    ...process.env,
+    ...options?.config,
+    // The helper intentionally reads only DATABASE_URL_TEST. Never let a
+    // production DATABASE_URL in the parent process override that choice.
+    DATABASE_URL: databaseUrl,
+    RELEASE_GIT_SHA: resolveTestReleaseSha(options?.config?.RELEASE_GIT_SHA),
+  } as EnvConfig;
+  Object.assign(process.env, mergedConfig);
+  // Keep the singleton aligned for the few application components that read
+  // env directly (health/readiness and logging). ConfigService consumers use
+  // the immutable per-app override below, so later app creation cannot change
+  // their view of feature flags.
+  Object.assign(env, mergedConfig);
 
   const builder = Test.createTestingModule({
     imports: [AppModule],
   });
 
+  builder.overrideProvider(ConfigService).useValue({
+    get<T extends keyof EnvConfig>(key: T): EnvConfig[T] {
+      // The legacy compatibility fixture binds its site after beforeEach
+      // seeds it. Keep only that one fixture value live; every other explicit
+      // option remains isolated to this app instance.
+      if (key === 'LEGACY_API_SITE_ID' && options?.config?.LEGACY_API_SITE_ID !== undefined) {
+        return options.config.LEGACY_API_SITE_ID as EnvConfig[T];
+      }
+      return mergedConfig[key];
+    },
+  });
+
   const moduleRef = await builder.compile();
 
-  const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+  const app = moduleRef.createNestApplication<NestFastifyApplication>(
+    new FastifyAdapter({
+      rewriteUrl: createLegacyApiV1RewriteUrl({ enabled: process.env['LEGACY_API_V1_ENABLED'] === 'true' }),
+    }),
+  );
   configureGlobalPrefix(app);
   app.useGlobalInterceptors(new EnvelopeInterceptor());
   app.useGlobalFilters(new AppExceptionFilter());
@@ -78,6 +114,7 @@ const ALL_TABLES = [
   'dedicated_line_placements',
   'dedicated_lines',
   'dedicated_line_orders',
+  'user_zones',
   'line_placement_policies',
   'inbound_profiles',
   'control_nodes',
@@ -123,6 +160,9 @@ const ALL_TABLES = [
 ];
 
 export async function cleanDatabase(): Promise<void> {
+  // Validate immediately before the destructive statement. Prisma may already
+  // be connected, so changing DATABASE_URL here would provide false safety.
+  assertDisposableDatabaseConnection();
   const list = ALL_TABLES.map((t) => `"${t}"`).join(', ');
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${list} RESTART IDENTITY CASCADE`);
 }
@@ -371,32 +411,6 @@ function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-/**
- * These helpers TRUNCATE every table, so they must never reach a database
- * anyone cares about. vitest.integration.config.ts already refuses to start
- * without DATABASE_URL_TEST, but this module is also importable directly, so it
- * enforces the same rule itself rather than trusting the runner's injection.
- */
-function resolveDisposableDatabaseUrl(): string {
-  const url = process.env['DATABASE_URL_TEST'] ?? process.env['DATABASE_URL'];
-  if (!url) {
-    throw new Error(
-      'DATABASE_URL_TEST is required for integration helpers. These specs TRUNCATE all tables, ' +
-        'so they refuse to guess. Point it at a disposable database, e.g. ' +
-        'DATABASE_URL_TEST="postgresql://postgres:postgres@127.0.0.1:5432/ipeasy_test"',
-    );
-  }
-  const host = new URL(url).hostname;
-  const isLoopback = host === 'localhost' || host === '127.0.0.1' || host === '::1';
-  if (!isLoopback) {
-    throw new Error(
-      `Refusing to run TRUNCATE-based integration helpers against non-loopback host "${host}". ` +
-        'Set DATABASE_URL_TEST to a local disposable database.',
-    );
-  }
-  return url;
-}
-
 const defaultTestConfig: EnvConfig = {
   NODE_ENV: 'test',
   RELEASE_GIT_SHA: '0'.repeat(40),
@@ -453,3 +467,10 @@ const defaultTestConfig: EnvConfig = {
   DEDICATED_LINE_MIGRATION_SMOKE_TARGET_URL: process.env['DEDICATED_LINE_MIGRATION_SMOKE_TARGET_URL'] ?? 'http://127.0.0.1:18080/health',
   DEDICATED_LINE_MIGRATION_SMOKE_TIMEOUT_MS: Number(process.env['DEDICATED_LINE_MIGRATION_SMOKE_TIMEOUT_MS'] ?? 8_000),
 };
+
+function resolveTestReleaseSha(explicit?: string): string {
+  const configured = [explicit, process.env['RELEASE_GIT_SHA'], process.env['RAILWAY_GIT_COMMIT_SHA']].find(
+    (value) => value !== undefined && /^[0-9a-f]{40}$/i.test(value),
+  );
+  return configured ?? defaultTestConfig.RELEASE_GIT_SHA;
+}

@@ -76,15 +76,18 @@ function reservationSource(): InventoryReservationSource & {
 }
 
 type InventoryRepoDouble = DedicatedLineInventoryRepository & {
+  findOrderReplay: ReturnType<typeof vi.fn>;
   enqueueInventoryLowAlert: ReturnType<typeof vi.fn>;
 };
 
 function inventoryRepo(
   route: unknown,
   enqueueInventoryLowAlert = vi.fn().mockResolvedValue(undefined),
+  replay: unknown = null,
 ): InventoryRepoDouble {
   return {
     findFreshRoute: vi.fn().mockResolvedValue(route),
+    findOrderReplay: vi.fn().mockResolvedValue(replay),
     enqueueInventoryLowAlert,
   } as unknown as InventoryRepoDouble;
 }
@@ -111,6 +114,47 @@ const freshRoute = {
 };
 
 describe('CreateDedicatedLineOrderUseCase', () => {
+  it('replays the persisted result before mutable Zone, catalog, inventory, placement, or quote checks', async () => {
+    const replay = {
+      status: 'QUEUED' as const,
+      orderId: 'order-existing',
+      reservationId: 'reservation-existing',
+      jobId: 'job-existing',
+      skuCode: 'SV',
+      countryCode: 'HK',
+      quantity: 2,
+      durationDays: 30,
+      unitPrice: '10',
+      totalPrice: '20',
+      currency: 'CNY',
+      priceSource: 'SITE_DEFAULT_TEMPLATE',
+      contractVersion: 1,
+      replayed: true as const,
+    };
+    const inventory = inventoryRepo(null, vi.fn(), replay);
+    const catalog = catalogRepo();
+    const quoteSourceMock = quoteSource([]);
+    const placement = placementRepo();
+    const source = reservationSource();
+    const resolveZone = { execute: vi.fn() };
+    const useCase = new CreateDedicatedLineOrderUseCase(
+      catalog,
+      new SkuQuoteUseCase(quoteSourceMock),
+      inventory,
+      placement,
+      new ReserveDedicatedLineStockUseCase(source),
+      resolveZone as never,
+    );
+
+    await expect(useCase.execute(ctx, input)).resolves.toEqual(replay);
+    expect(resolveZone.execute).not.toHaveBeenCalled();
+    expect(catalog.findSku).not.toHaveBeenCalled();
+    expect(inventory.findFreshRoute).not.toHaveBeenCalled();
+    expect(placement.resolveForOrder).not.toHaveBeenCalled();
+    expect(quoteSourceMock.findSku).not.toHaveBeenCalled();
+    expect(source.reserveAndEnqueue).not.toHaveBeenCalled();
+  });
+
   it('prices the order from the catalog SKU price rule and charges the quoted total', async () => {
     const source = reservationSource();
     const useCase = new CreateDedicatedLineOrderUseCase(
@@ -155,6 +199,36 @@ describe('CreateDedicatedLineOrderUseCase', () => {
     const result = await useCase.execute(ctx, { ...input, quantity: 3 });
 
     expect(result.totalPrice).toBe('0.21');
+  });
+
+  it('resolves zoneCode before reserving stock and persists only the scoped zone ID', async () => {
+    const source = reservationSource();
+    const resolveZone = {
+      execute: vi.fn().mockResolvedValue({ id: 'zone-1', status: 'ACTIVE' }),
+    };
+    const useCase = new CreateDedicatedLineOrderUseCase(
+      catalogRepo(),
+      new SkuQuoteUseCase(quoteSource([
+        { source: 'SITE_DEFAULT_TEMPLATE', candidates: [{ unitPrice: '13.50', currency: 'CNY', source: 'SITE_DEFAULT_TEMPLATE' }], hasCurrencyMismatch: false },
+      ])),
+      inventoryRepo(freshRoute),
+      placementRepo(),
+      new ReserveDedicatedLineStockUseCase(source),
+      resolveZone as never,
+    );
+
+    await useCase.execute(ctx, { ...input, zoneCode: ' short-video ' });
+
+    expect(resolveZone.execute).toHaveBeenCalledWith(
+      { siteId: 'site-1', tenantId: 'tenant-1', userId: 'user-1' },
+      ' short-video ',
+    );
+    const reserved = source.reserveAndEnqueue.mock.calls[0]![0] as ReserveDedicatedLineStockInput;
+    expect(reserved.zoneId).toBe('zone-1');
+    expect(reserved.jobPayload).not.toHaveProperty('zoneCode');
+    expect(resolveZone.execute.mock.invocationCallOrder[0]).toBeLessThan(
+      source.reserveAndEnqueue.mock.invocationCallOrder[0]!,
+    );
   });
 
   it('throws PRICE_MISSING when no price rule matches and never charges a default rate', async () => {
@@ -244,7 +318,7 @@ describe('CreateDedicatedLineOrderUseCase', () => {
       jobId: 'job-1',
       snapshotId: 'snap-1',
       sourceVersion: 'v1',
-      replayed: true,
+      replayed: false,
     });
     const useCase = new CreateDedicatedLineOrderUseCase(
       catalogRepo(),
@@ -258,11 +332,85 @@ describe('CreateDedicatedLineOrderUseCase', () => {
 
     const result = await useCase.execute(ctx, input);
 
-    expect(result.replayed).toBe(true);
+    expect(result.replayed).toBe(false);
     expect(result.orderId).toBe('order-1');
     const reserved = source.reserveAndEnqueue.mock.calls[0]![0] as ReserveDedicatedLineStockInput;
     expect(reserved.idempotencyKey).toBe('order-key-1');
-    expect(reserved.charge.idempotencyKey).toBe('dedicated_line_order:order-key-1');
+    expect(reserved.charge.idempotencyKey).toBe('dedicated-line-order:site-1:tenant-1:user-1:order-key-1');
+  });
+
+  it('returns the persisted snapshot when reserve detects a concurrent replay after a changed quote', async () => {
+    const source = reservationSource();
+    source.reserveAndEnqueue.mockResolvedValue({
+      kind: 'RESERVED',
+      reservationId: 'reservation-existing',
+      orderId: 'order-existing',
+      jobId: 'job-existing',
+      snapshotId: 'snapshot-existing',
+      sourceVersion: 'v1',
+      replayed: true,
+    });
+    const persisted = {
+      status: 'QUEUED' as const,
+      orderId: 'order-existing',
+      reservationId: 'reservation-existing',
+      jobId: 'job-existing',
+      skuCode: 'SV',
+      countryCode: 'HK',
+      quantity: 2,
+      durationDays: 30,
+      unitPrice: '10',
+      totalPrice: '20',
+      currency: 'CNY',
+      priceSource: 'SITE_DEFAULT_TEMPLATE',
+      contractVersion: 1,
+      replayed: true as const,
+    };
+    const inventory = inventoryRepo(freshRoute);
+    inventory.findOrderReplay
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(persisted);
+    const useCase = new CreateDedicatedLineOrderUseCase(
+      catalogRepo(),
+      new SkuQuoteUseCase(quoteSource([
+        { source: 'SITE_DEFAULT_TEMPLATE', candidates: [{ unitPrice: '11', currency: 'CNY', source: 'SITE_DEFAULT_TEMPLATE' }], hasCurrencyMismatch: false },
+      ])),
+      inventory,
+      placementRepo(),
+      new ReserveDedicatedLineStockUseCase(source),
+    );
+
+    await expect(useCase.execute(ctx, input)).resolves.toEqual(persisted);
+    expect(inventory.findOrderReplay).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails closed when reserve reports a replay but the persisted snapshot is missing', async () => {
+    const source = reservationSource();
+    source.reserveAndEnqueue.mockResolvedValue({
+      kind: 'RESERVED',
+      reservationId: 'reservation-existing',
+      orderId: 'order-existing',
+      jobId: 'job-existing',
+      snapshotId: 'snapshot-existing',
+      sourceVersion: 'v1',
+      replayed: true,
+    });
+    const inventory = inventoryRepo(freshRoute);
+    const useCase = new CreateDedicatedLineOrderUseCase(
+      catalogRepo(),
+      new SkuQuoteUseCase(quoteSource([
+        { source: 'SITE_DEFAULT_TEMPLATE', candidates: [{ unitPrice: '11', currency: 'CNY', source: 'SITE_DEFAULT_TEMPLATE' }], hasCurrencyMismatch: false },
+      ])),
+      inventory,
+      placementRepo(),
+      new ReserveDedicatedLineStockUseCase(source),
+    );
+
+    await expect(useCase.execute(ctx, input)).rejects.toMatchObject({
+      code: ErrorCode.INTERNAL_ERROR,
+      reasonKey: 'dedicated_line_order_replay_missing',
+    });
+    expect(inventory.findOrderReplay).toHaveBeenCalledTimes(2);
   });
 
   it('emits a job request the worker can parse, so a paid order never strands on payload validation', async () => {

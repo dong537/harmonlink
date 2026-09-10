@@ -1,4 +1,7 @@
 import { Test } from '@nestjs/testing';
+import type { TestingModule } from '@nestjs/testing';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { FastifyAdapter } from '@nestjs/platform-fastify';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { PaymentsModule } from '../payments.module';
 import { WalletModule } from '../../wallet/wallet.module';
@@ -7,15 +10,15 @@ import { WalletRepository } from '../../wallet/wallet.repository';
 import { ConfirmPaymentOrderUseCase } from '../use-cases/confirm-payment-order.use-case';
 
 describe('PaymentsModule DI 集成测试', () => {
-  let moduleRef: any;
-  let app: any;
+  let moduleRef: TestingModule;
+  let app: NestFastifyApplication;
 
   beforeAll(async () => {
     moduleRef = await Test.createTestingModule({
       imports: [AuthModule, WalletModule, PaymentsModule],
     }).compile();
 
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     await app.init();
   });
 

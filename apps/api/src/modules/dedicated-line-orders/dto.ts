@@ -24,4 +24,7 @@ export class CreateDedicatedLineOrderDto {
 
   @ApiPropertyOptional({ description: 'Provider business code, only when the configured SKU contract requires it' })
   businessType?: string;
+
+  @ApiPropertyOptional({ description: 'User-owned Zone code for grouping the resulting lines' })
+  zoneCode?: string;
 }

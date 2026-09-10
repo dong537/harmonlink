@@ -18,7 +18,7 @@ type InventoryLowPayload = {
   countryCode: string;
   requestedQuantity: number | null;
   availableQuantity: number | null;
-  sourceVersion: number | null;
+  sourceVersion: string | null;
 };
 
 @Injectable()
@@ -123,7 +123,7 @@ function parseInventoryLowPayload(raw: unknown): InventoryLowPayload {
     countryCode,
     requestedQuantity: readNumber(record['requestedQuantity']),
     availableQuantity: readNumber(record['availableQuantity']),
-    sourceVersion: readNumber(record['sourceVersion']),
+    sourceVersion: readString(record['sourceVersion']),
   };
 }
 
@@ -138,6 +138,7 @@ function readNumber(value: unknown): number | null {
 function buildAlertBody(payload: InventoryLowPayload): string {
   const requested = payload.requestedQuantity ?? 'unknown';
   const available = payload.availableQuantity ?? 'unknown';
+  const sourceVersion = payload.sourceVersion ?? 'unknown';
   // `none` marks a total outage with no route to blame; provider codes are uppercase,
   // so the token cannot be mistaken for one.
   const provider = payload.providerCode ?? 'none';
@@ -147,5 +148,6 @@ function buildAlertBody(payload: InventoryLowPayload): string {
     `sku=${payload.skuId}`,
     `requested=${requested}`,
     `available=${available}`,
+    `sourceVersion=${sourceVersion}`,
   ].join(' ');
 }
