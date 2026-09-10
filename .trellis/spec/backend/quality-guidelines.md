@@ -31,6 +31,62 @@ clear success/failure state that can be tested and audited.
 * Re-declaring provider adapters in consumer modules instead of importing the
   owning `ProvidersModule`.
 
+## Scenario: Tracked Secret Scan Boundaries
+
+### 1. Scope / Trigger
+
+- Trigger: running `pnpm run security:scan` or the pre-deploy check over tracked files.
+- Applies to: `scripts/scan-secrets.mjs` and release verification.
+
+### 2. Signatures
+
+- `findSecretFindings(files: Array<{ path: string; content: string }>): string[]`
+- CLI: `pnpm run security:scan` exits non-zero when a high-confidence finding exists.
+
+### 3. Contracts
+
+- Always detect known provider/control-node credential formats and remote database URLs.
+- Ignore local loopback database examples, explicit placeholders, and generic high-entropy
+  test fixtures under `*.spec.*` / `*.test.*` paths.
+- Report only `path:line` references; never print the matched secret value.
+- Skip tracked paths that are deleted in the working tree and continue scanning
+  the remaining files; a removed artifact must not make the release check crash.
+
+### 4. Validation & Error Matrix
+
+- Known provider prefix -> finding.
+- Remote database URL with a non-placeholder password -> finding.
+- Localhost/loopback database example -> no finding.
+- Generic credential placeholder or test fixture -> no finding.
+
+### 5. Good/Base/Bad Cases
+
+- Good: release scan blocks a real remote connection string before deployment.
+- Base: local test setup remains runnable without producing a false release failure.
+- Bad: a broad `password` regex blocks every integration test or prints secret contents.
+
+### 6. Tests Required
+
+- Node test runner covers local examples, remote URLs, known provider formats, placeholders,
+  and test-file fixtures.
+- The full tracked-file scan must pass before a release claim is made.
+- Include a regression case with a deleted tracked path so the scanner fails
+  closed on findings rather than failing open through an early read error.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```js
+/(?:password|token)\s*[:=]\s*["'][^"']+["']/i
+```
+
+#### Correct
+
+```js
+findSecretFindings(trackedFiles); // classify by credential confidence and path context
+```
+
 ---
 
 ## Required Patterns

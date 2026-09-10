@@ -64,7 +64,7 @@ SELECT id FROM sites LIMIT 1;
 ```bash
 # 测试数据库连接
 docker run --rm -it postgres:16-alpine \
-  psql "postgresql://365_user:F7R5AxnD2K8gWqPy@91.149.237.33:5432/365_prod" \
+  psql "postgresql://<db-user>:<db-password>@<db-host>:5432/<db-name>" \
   -c "SELECT version();"
 ```
 

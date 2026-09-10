@@ -66,17 +66,17 @@
 
 ### 已有凭据
 - **985Proxy**:
-  - API Key: `yR_7WPGbMxp-eVJfN1dQR2JNeHA0Y2MwMTc2NDk5MDc1MQ==`
+  - API Key: `<NINE_EIGHT_FIVE_APIKEY>`
   - Zone ID: `4sd72p1bvlha`
   - Base URL: `https://open-api.985proxy.com`
 - **ipipd**:
-  - App ID: `APP13618B8748`
-  - App Secret: `fzEE0vF014A7WfdpCp0pek2ufnRo65E4HN6Ni3rZjitx9sjpNSy0beIyo6UKGbi7`
+  - App ID: `<IPIPD_APP_ID>`
+  - App Secret: `<IPIPD_APP_SECRET>`
   - Base URL: `https://api.ipipd.cn/api`
 - **控制节点 API Tokens**:
-  - HK_VM_18545: `ctrl_hk_vm18545_9f8e7d6c5b4a3210fedcba9876543210`
-  - HK_VM_18544: `ctrl_hk_vm18544_1a2b3c4d5e6f7890abcdef1234567890`
-  - HK_VM_18541: `ctrl_hk_vm18541_fedcba9876543210abcdef1234567890`
+  - HK_VM_18545: `<CONTROL_NODE_TOKEN>`
+  - HK_VM_18544: `<CONTROL_NODE_TOKEN>`
+  - HK_VM_18541: `<CONTROL_NODE_TOKEN>`
 
 ### 现有代码模块
 - `apps/api/src/modules/providers/` - provider adapters 和 types

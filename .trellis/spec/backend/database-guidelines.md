@@ -65,6 +65,159 @@ comparison or arithmetic.
 * Treating a missing inventory snapshot as stock `0` instead of
   `inventory_stale`.
 * Catching Prisma errors and returning empty pages or fake resources.
+* Catching a unique-index error inside an interactive PostgreSQL transaction and
+  continuing to query the same transaction. The transaction is aborted after
+  the error; let it roll back, then replay the scoped idempotency key in a fresh
+  transaction.
+
+## Scenario: PostgreSQL Timestamp And Disposable Integration Database
+
+### 1. Scope / Trigger
+
+- Trigger: a Prisma `DateTime` value is used in raw SQL, especially for
+  reservation expiry, inventory freshness, or worker leases, or an integration
+  test truncates shared tables.
+
+### 2. Signatures
+
+- Prisma `DateTime` columns in the current schema map to PostgreSQL
+  `timestamp(3) without time zone`.
+- Integration tests require an explicit `DATABASE_URL_TEST` whose host is
+  loopback (`localhost`, `127.0.0.0/8`, or `::1`).
+- Integration files are run serially against that disposable database; each
+  file may execute `TRUNCATE ... CASCADE`.
+
+### 3. Contracts
+
+- Treat persisted Prisma `DateTime` values as UTC instants at the SQL boundary.
+- When comparing a column to the current time in raw SQL, use
+  `CURRENT_TIMESTAMP AT TIME ZONE 'UTC'`, not a bound JavaScript `Date` whose
+  implicit session-time-zone conversion can shift the comparison.
+- Run the complete Prisma migration set before integration tests. Never point
+  destructive integration helpers at `DATABASE_URL` or a remote database.
+
+### 4. Validation & Error Matrix
+
+- PostgreSQL session timezone is non-UTC -> expiry comparisons still use UTC
+  and a fresh reservation remains claimable.
+- Missing `DATABASE_URL_TEST` -> test setup fails before any destructive query.
+- Non-loopback `DATABASE_URL_TEST` -> test setup rejects the URL.
+- Multiple integration files started concurrently -> forbidden; they race on
+  shared truncation and results are invalid.
+- Missing migration/FK -> fix the disposable schema before interpreting test
+  failures as application regressions.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `AND "expiresAt" > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')` in an
+  atomic reservation update.
+- Base: a local disposable PostgreSQL database is recreated and migrated once,
+  then each integration file runs and exits before the next starts.
+- Bad: binding `new Date()` directly in a raw SQL comparison while the session
+  timezone is `Asia/Shanghai`, or running two truncating Vitest files in
+  parallel.
+
+### 6. Tests Required
+
+- Repository integration: fresh, expired, and boundary reservation cases with
+  a non-UTC PostgreSQL session timezone.
+- Integration setup unit tests: missing, remote, and valid loopback
+  `DATABASE_URL_TEST` values.
+- Full integration suite: one Vitest process with `fileParallelism: false`,
+  after `prisma migrate deploy` succeeds on the disposable database.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```sql
+AND "expiresAt" > $1 -- JavaScript Date bound into a timestamp column
+```
+
+#### Correct
+
+```sql
+AND "expiresAt" > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+```
+
+## Scenario: Scoped User Zones And Legacy Numeric IDs
+
+### 1. Scope / Trigger
+
+- Trigger: adding persisted user Zones or numeric compatibility identifiers to
+  an existing PostgreSQL schema.
+- Applies to `users.legacyId`, `user_zones`, and the Zone foreign keys on
+  dedicated-line orders and lines.
+
+### 2. Signatures
+
+- Migration order: `20260908220000_add_user_legacy_id` must run before
+  `20260908230000_add_user_zones`.
+- Zone uniqueness: `(siteId, tenantId, userId, code)`.
+- Order/line Zone relation: the four-column scope plus `zoneId` references the
+  corresponding Zone scope; placement rows intentionally have no `zoneId`.
+
+### 3. Contracts
+
+- `users.legacyId` is a persisted, globally unique auto-increment bridge for
+  frozen numeric routes. It is not derived from a UUID or process-local map.
+- `user_zones.code` is stored lowercase and constrained to the compatibility
+  grammar; `sortOrder` is constrained to `0..999`.
+- New migrations are additive and independently deployable. Do not couple an
+  unrelated user identity column to the Zone table creation migration.
+- Customer order lists must query with the complete authenticated scope
+  `(siteId, userId, tenantId)`; `userId + tenantId` alone is insufficient in a
+  shared database because a stale or cross-site tenant tuple could otherwise
+  expose another site's order.
+- A Zone status read performed before an order or renewal transaction is only a
+  hint. Immediately before persisting `zoneId`, the transaction must lock the
+  complete `(siteId, tenantId, userId, id)` row with `FOR UPDATE` and re-check
+  `ACTIVE`; otherwise an archive can commit between validation and the foreign
+  key write.
+
+### 4. Validation & Error Matrix
+
+- Full migration replay on an empty disposable PostgreSQL database -> all
+  migrations apply in lexical order with no pending steps.
+- Duplicate legacy ID or scoped Zone code -> database unique constraint.
+- Uppercase Zone code or out-of-range sort order -> database CHECK constraint.
+- Cross-site/tenant/user Zone foreign-key tuple -> database foreign-key reject.
+- Archive wins the row-lock race -> purchase/renewal returns
+  `409 zone_archived` and persists no order/line mutation.
+
+### 5. Good / Base / Bad Cases
+
+- Good: apply the legacy ID migration, then the Zone migration, then deploy the
+  API; rerunning `migrate:deploy` reports no pending changes.
+- Base: existing users receive sequence-backed IDs during migration and new
+  users continue from the sequence.
+- Bad: putting `users.legacyId` DDL in the Zone migration, adding only a UUID
+  foreign key, or validating scope only in the frontend.
+
+### 6. Tests Required
+
+- Disposable PostgreSQL replay of the complete migration directory.
+- Constraint tests for code case, sort range, uniqueness, and scope tuples.
+- API integration tests for order Zone persistence and fulfillment inheritance.
+- Repository tests must assert that both `count` and `findMany` receive the
+  same complete `(siteId, userId, tenantId)` predicate.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```sql
+-- Zone migration also owns an unrelated user identity change
+ALTER TABLE user_zones ...;
+ALTER TABLE users ADD COLUMN legacyId SERIAL;
+```
+
+#### Correct
+
+```text
+20260908220000_add_user_legacy_id
+20260908230000_add_user_zones
+```
 
 ## Scenario: Repository Pagination and DB Failure Behavior
 

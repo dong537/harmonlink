@@ -317,7 +317,7 @@ function normalizeIpipdCountryCode(value: unknown): string | undefined {
    ```sql
    INSERT INTO provider_accounts (code, credential, baseUrl, status) VALUES (
      'NINE_EIGHT_FIVE',
-     '{"apikey":"yR_7WPGbMxp-eVJfN1dQR2JNeHA0Y2MwMTc2NDk5MDc1MQ==","zoneId":"4sd72p1bvlha"}',
+     '{"apikey":"<NINE_EIGHT_FIVE_APIKEY>","zoneId":"4sd72p1bvlha"}',
      'https://open-api.985proxy.com',
      'ACTIVE'
    );
@@ -326,7 +326,7 @@ function normalizeIpipdCountryCode(value: unknown): string | undefined {
 2. **调用库存同步 API**:
    ```bash
    curl -X POST https://open-api.985proxy.com/res_static/inventory \
-     -H "apikey: yR_7WPGbMxp-eVJfN1dQR2JNeHA0Y2MwMTc2NDk5MDc1MQ==" \
+     -H "apikey: <NINE_EIGHT_FIVE_APIKEY>" \
      -H "Content-Type: application/json" \
      -d '{"static_proxy_type":"premium","zone":"4sd72p1bvlha"}'
    ```
@@ -342,7 +342,7 @@ function normalizeIpipdCountryCode(value: unknown): string | undefined {
    ```sql
    INSERT INTO provider_accounts (code, credential, baseUrl, status) VALUES (
      'IPIPD',
-     '{"appId":"APP13618B8748","appSecret":"fzEE0vF014A7WfdpCp0pek2ufnRo65E4HN6Ni3rZjitx9sjpNSy0beIyo6UKGbi7"}',
+     '{"appId":"<IPIPD_APP_ID>","appSecret":"<IPIPD_APP_SECRET>"}',
      'https://api.ipipd.cn/api',
      'ACTIVE'
    );

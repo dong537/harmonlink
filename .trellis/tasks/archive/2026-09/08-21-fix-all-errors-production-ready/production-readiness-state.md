@@ -10,7 +10,7 @@
 NINE_EIGHT_FIVE  ACTIVE  https://open-api.985proxy.com
   apikey 48字符 / zoneId 4sd72p1bvlha        解密回读一致
 IPIPD            ACTIVE  https://api.ipipd.cn
-  appId APP13618B8748 / appSecret 64字符      解密回读一致
+  appId <IPIPD_APP_ID> / appSecret 64字符      解密回读一致
 ```
 
 siteId `7f486516-aeee-4b80-9d6b-0c364c94c54a`（MAIN）。用**生产** `APP_ENCRYPTION_KEY` 加密，
