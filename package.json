@@ -9,6 +9,7 @@
     "test": "pnpm --filter @ipeasy/db generate && turbo run test",
     "e2e": "turbo run e2e",
     "dev": "turbo run dev",
+    "security:scan": "node scripts/scan-secrets.mjs",
     "predeploy:check": "node scripts/predeploy-check.mjs",
     "deploy:railway": "node scripts/deploy-railway.mjs"
   },

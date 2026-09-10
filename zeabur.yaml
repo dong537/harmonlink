@@ -3,7 +3,7 @@ services:
   - name: api
     dockerfile: ./apps/api/Dockerfile
     ports:
-      - 3000
+      - 8080
     environment:
       NODE_ENV: production
   
@@ -11,14 +11,19 @@ services:
     dockerfile: ./apps/worker/Dockerfile
     environment:
       NODE_ENV: production
-      DEDICATED_LINE_ORDER_EXECUTION_ENABLED: "true"
-      DEDICATED_LINE_ORDER_PROVIDER_ALLOWLIST: "NINE_EIGHT_FIVE,IPIPD"
-      DEDICATED_LINE_PROJECTION_EXECUTION_ENABLED: "true"
+      PROVIDER_FULFILLMENT_EXECUTION_ENABLED: "false"
+      DEDICATED_LINE_ORDER_EXECUTION_ENABLED: "false"
+      DEDICATED_LINE_ORDER_PROVIDER_ALLOWLIST: ""
+      DEDICATED_LINE_ORDER_ACCOUNT_ALLOWLIST: ""
+      DEDICATED_LINE_PROJECTION_EXECUTION_ENABLED: "false"
+      DEDICATED_LINE_MIGRATION_EXECUTION_ENABLED: "false"
+      DEDICATED_LINE_HEALTH_EXECUTION_ENABLED: "false"
+      BARK_ALERTS_ENABLED: "false"
       PROVIDER_INVENTORY_SYNC_ENABLED: "true"
   
   - name: web
     dockerfile: ./apps/web/Dockerfile
     ports:
-      - 3000
+      - 8080
     environment:
       NODE_ENV: production

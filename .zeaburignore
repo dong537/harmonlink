@@ -1,0 +1,35 @@
+# Local dependencies and generated artifacts
+**/node_modules/
+node_modules/
+**/.pnpm-store/
+.pnpm-store/
+**/dist/
+dist/
+**/generated/
+packages/db/generated/
+**/.turbo/
+.turbo/
+**/.pytest_cache/
+.pytest_cache/
+
+# Local tooling state and deployment snapshots
+.tmp/
+**/.tmp/
+.trellis/
+.claude/
+.codex/
+.opencode/
+.agents/
+.zeabur/
+.git/
+
+# Secrets and local environment files
+.env
+.env.*
+!.env.example
+
+# Logs and test output
+*.log
+coverage/
+test-results/
+playwright-report/

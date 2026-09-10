@@ -204,7 +204,7 @@ headers: {
 
 - **API 文档**: https://docs.985proxy.com/
 - **正式环境**: https://open-api.985proxy.com
-- **API Key**: `yR_7WPGbMxp-eVJfN1dQR2JNeHA0Y2MwMTc2NDk5MDc1MQ==`
+- **API Key**: `<NINE_EIGHT_FIVE_APIKEY>`
 - **Zone ID**: `4sd72p1bvlha`
 
 **要求**：
@@ -220,8 +220,8 @@ headers: {
 
 **生产应用密钥**：
 - 应用名称: `365Proxy Bai`
-- App ID: `APP13618B8748`
-- App Secret: `fzEE0vF014A7WfdpCp0pek2ufnRo65E4HN6Ni3rZjitx9sjpNSy0beIyo6UKGbi7`
+- App ID: `<IPIPD_APP_ID>`
+- App Secret: `<IPIPD_APP_SECRET>`
 
 ---
 

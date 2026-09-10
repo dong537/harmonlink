@@ -1,224 +1,193 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-set -e
+set -Eeuo pipefail
+IFS=$'\n\t'
 
-echo "🚀 Zeabur 自动化部署脚本"
-echo "================================"
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+ROOT_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd)
+cd "$ROOT_DIR"
 
-# 颜色定义
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+usage() {
+  cat <<'USAGE'
+Usage:
+  deploy-zeabur.sh [options]
 
-# 配置
-PROJECT_ID="6a786d80e4a69d66638d62e1"
-ENV_ID="6a786d805f062718bc7b8dfb"
-GIT_BRANCH="railway-fixes-merge"
+Required values may be supplied with the matching ZEABUR_* environment variable
+or the option shown below. The script is a dry-run unless --execute is passed.
 
-# 函数：打印步骤
-step() {
-  echo ""
-  echo -e "${GREEN}▶ $1${NC}"
+Options:
+  --project-id ID          ZEABUR_PROJECT_ID
+  --environment-id ID      ZEABUR_ENVIRONMENT_ID
+  --api-service-id ID      ZEABUR_API_SERVICE_ID
+  --worker-service-id ID   ZEABUR_WORKER_SERVICE_ID
+  --web-service-id ID      ZEABUR_WEB_SERVICE_ID
+  --branch NAME            ZEABUR_GIT_BRANCH (defaults to the current branch)
+  --remote NAME            ZEABUR_GIT_REMOTE (defaults to origin)
+  --api-url URL            ZEABUR_API_URL (required by --health-check)
+  --web-url URL            ZEABUR_WEB_URL (required by --health-check)
+  --push                   Push the checked commit before deploying
+  --migrate                Run the explicit API migration command after deploy
+  --health-check           Run scripts/health-check-zeabur.sh after deploy
+  --execute                Perform push/deploy/migration/health operations
+  --help                   Show this help
+
+Examples:
+  ZEABUR_PROJECT_ID=... ZEABUR_ENVIRONMENT_ID=... \
+  ZEABUR_API_SERVICE_ID=... ZEABUR_WORKER_SERVICE_ID=... \
+  ZEABUR_WEB_SERVICE_ID=... ./scripts/deploy-zeabur.sh
+
+  ./scripts/deploy-zeabur.sh --project-id ... --environment-id ... \
+    --api-service-id ... --worker-service-id ... --web-service-id ... \
+    --api-url https://api.example --web-url https://web.example \
+    --execute --push --migrate --health-check
+USAGE
 }
 
-# 函数：打印警告
-warn() {
-  echo -e "${YELLOW}⚠️  $1${NC}"
-}
-
-# 函数：打印错误
-error() {
-  echo -e "${RED}❌ $1${NC}"
+die() {
+  printf 'deploy-zeabur: %s\n' "$*" >&2
   exit 1
 }
 
-# 函数：检查命令是否存在
-check_command() {
-  if ! command -v $1 &> /dev/null; then
-    error "$1 未安装，请先安装"
-  fi
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 }
 
-# Step 1: 检查依赖
-step "检查依赖..."
-check_command "git"
-check_command "node"
-check_command "pnpm"
+require_id() {
+  local name=$1
+  local value=$2
+  [[ -n "$value" ]] || die "$name is required (use --${name//_/-} or the matching ZEABUR_* variable)"
+  [[ "$value" =~ ^[A-Za-z0-9._:-]+$ ]] || die "$name contains unsupported characters"
+}
 
-# Step 2: 检查 Git 状态
-step "检查 Git 状态..."
+require_url() {
+  local name=$1
+  local value=$2
+  [[ "$value" =~ ^https?://[^/[:space:]?\#]+/?$ ]] || die "$name must be an http(s) origin without a path or query"
+}
+
+PROJECT_ID=${ZEABUR_PROJECT_ID:-}
+ENVIRONMENT_ID=${ZEABUR_ENVIRONMENT_ID:-}
+API_SERVICE_ID=${ZEABUR_API_SERVICE_ID:-}
+WORKER_SERVICE_ID=${ZEABUR_WORKER_SERVICE_ID:-}
+WEB_SERVICE_ID=${ZEABUR_WEB_SERVICE_ID:-}
+BRANCH=${ZEABUR_GIT_BRANCH:-}
+REMOTE=${ZEABUR_GIT_REMOTE:-origin}
+API_URL=${ZEABUR_API_URL:-}
+WEB_URL=${ZEABUR_WEB_URL:-}
+EXECUTE=0
+PUSH=0
+MIGRATE=0
+HEALTH_CHECK=0
+
+while (($# > 0)); do
+  case "$1" in
+    --project-id) [[ $# -ge 2 ]] || die '--project-id requires a value'; PROJECT_ID=$2; shift 2 ;;
+    --environment-id) [[ $# -ge 2 ]] || die '--environment-id requires a value'; ENVIRONMENT_ID=$2; shift 2 ;;
+    --api-service-id) [[ $# -ge 2 ]] || die '--api-service-id requires a value'; API_SERVICE_ID=$2; shift 2 ;;
+    --worker-service-id) [[ $# -ge 2 ]] || die '--worker-service-id requires a value'; WORKER_SERVICE_ID=$2; shift 2 ;;
+    --web-service-id) [[ $# -ge 2 ]] || die '--web-service-id requires a value'; WEB_SERVICE_ID=$2; shift 2 ;;
+    --branch) [[ $# -ge 2 ]] || die '--branch requires a value'; BRANCH=$2; shift 2 ;;
+    --remote) [[ $# -ge 2 ]] || die '--remote requires a value'; REMOTE=$2; shift 2 ;;
+    --api-url) [[ $# -ge 2 ]] || die '--api-url requires a value'; API_URL=$2; shift 2 ;;
+    --web-url) [[ $# -ge 2 ]] || die '--web-url requires a value'; WEB_URL=$2; shift 2 ;;
+    --push) PUSH=1; shift ;;
+    --migrate) MIGRATE=1; shift ;;
+    --health-check) HEALTH_CHECK=1; shift ;;
+    --execute) EXECUTE=1; shift ;;
+    --help|-h) usage; exit 0 ;;
+    *) die "unknown option: $1" ;;
+  esac
+done
+
+require_command git
+
+[[ -n "$BRANCH" ]] || BRANCH=$(git branch --show-current)
+[[ -n "$BRANCH" ]] || die 'detached HEAD is not deployable; provide --branch explicitly'
+[[ "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]] || die 'branch name contains unsupported characters'
+[[ "$REMOTE" =~ ^[A-Za-z0-9._:/-]+$ ]] || die 'remote name contains unsupported characters'
+
+require_id ZEABUR_PROJECT_ID "$PROJECT_ID"
+require_id ZEABUR_ENVIRONMENT_ID "$ENVIRONMENT_ID"
+require_id ZEABUR_API_SERVICE_ID "$API_SERVICE_ID"
+require_id ZEABUR_WORKER_SERVICE_ID "$WORKER_SERVICE_ID"
+require_id ZEABUR_WEB_SERVICE_ID "$WEB_SERVICE_ID"
+[[ "$API_SERVICE_ID" != "$WORKER_SERVICE_ID" ]] || die 'API and Worker service IDs must be different'
+[[ "$API_SERVICE_ID" != "$WEB_SERVICE_ID" ]] || die 'API and Web service IDs must be different'
+[[ "$WORKER_SERVICE_ID" != "$WEB_SERVICE_ID" ]] || die 'Worker and Web service IDs must be different'
+
+if ((HEALTH_CHECK)); then
+  [[ -n "$API_URL" ]] || die '--health-check requires --api-url or ZEABUR_API_URL'
+  [[ -n "$WEB_URL" ]] || die '--health-check requires --web-url or ZEABUR_WEB_URL'
+  require_url ZEABUR_API_URL "$API_URL"
+  require_url ZEABUR_WEB_URL "$WEB_URL"
+fi
+
 CURRENT_BRANCH=$(git branch --show-current)
-echo "当前分支: $CURRENT_BRANCH"
+[[ "$CURRENT_BRANCH" == "$BRANCH" ]] || die "current branch '$CURRENT_BRANCH' does not match requested branch '$BRANCH'"
 
-if [ "$CURRENT_BRANCH" != "$GIT_BRANCH" ]; then
-  warn "当前不在 $GIT_BRANCH 分支"
-  read -p "是否切换到 $GIT_BRANCH 分支? (y/n) " -n 1 -r
-  echo
-  if [[ $REPLY =~ ^[Yy]$ ]]; then
-    git checkout $GIT_BRANCH
-  else
-    error "部署已取消"
-  fi
+printf 'Zeabur deployment plan\n'
+printf '  project:     %s\n' "$PROJECT_ID"
+printf '  environment: %s\n' "$ENVIRONMENT_ID"
+printf '  branch:      %s\n' "$BRANCH"
+printf '  commit:      '
+COMMIT_SHA=$(git rev-parse HEAD)
+[[ "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]] || die 'HEAD is not a complete 40-character commit SHA'
+printf '%s\n' "$COMMIT_SHA"
+printf '  services:    api=%s worker=%s web=%s\n' "$API_SERVICE_ID" "$WORKER_SERVICE_ID" "$WEB_SERVICE_ID"
+
+printf '\nRequired production variables are managed in Zeabur, never generated by this script:\n'
+printf '  DATABASE_URL, REDIS_URL, APP_ENCRYPTION_KEY (64 hex chars), JWT_SECRET, APP_PLATFORM_CURRENCY\n'
+printf '  RELEASE_GIT_SHA=%s\n' "$COMMIT_SHA"
+printf '  Keep fulfillment/order/projection/migration/health execution disabled until provider gates pass.\n'
+
+if ((PUSH)); then
+  printf '  push:        %s/%s\n' "$REMOTE" "$BRANCH"
+fi
+if ((MIGRATE)); then
+  printf '  migration:   API service exec after deployment\n'
+fi
+if ((HEALTH_CHECK)); then
+  printf '  health:      %s and %s\n' "$API_URL" "$WEB_URL"
 fi
 
-# Step 3: 检查未提交的更改
-if ! git diff-index --quiet HEAD --; then
-  warn "存在未提交的更改"
-  git status --short
-  read -p "是否继续部署? (y/n) " -n 1 -r
-  echo
-  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    error "部署已取消"
-  fi
-fi
-
-# Step 4: 推送到远程
-step "推送代码到远程仓库..."
-read -p "远程仓库名称 (默认: origin): " REMOTE
-REMOTE=${REMOTE:-origin}
-
-echo "推送 $GIT_BRANCH 到 $REMOTE..."
-git push $REMOTE $GIT_BRANCH
-
-# Step 5: 生成环境变量
-step "生成环境变量..."
-
-# 生成密钥
-APP_ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
-JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(64).toString('hex'))")
-SESSION_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
-
-echo "✅ 密钥已生成"
-
-# Step 6: 创建环境变量文件
-step "创建 Zeabur 环境变量文件..."
-
-cat > .env.zeabur <<EOF
-# ========================================
-# Zeabur 生产环境变量
-# 生成时间: $(date '+%Y-%m-%d %H:%M:%S')
-# ========================================
-
-# ---------- Platform ----------
-APP_PUBLIC_BRAND_NAME=IPEasy
-APP_PUBLIC_SITE_URL=https://your-domain.zeabur.app
-APP_PUBLIC_API_URL=https://api.your-domain.zeabur.app
-APP_PUBLIC_SUPPORT_EMAIL=support@ipeasy.com
-APP_PLATFORM_CURRENCY=CNY
-APP_TIMEZONE=Asia/Shanghai
-APP_ADMIN_BASE_PATH=/admin
-
-# ---------- Deployment ----------
-NODE_ENV=production
-RELEASE_GIT_SHA=\${ZEABUR_GIT_COMMIT_SHA}
-PORT=8080
-WEB_PORT=4173
-WEB_PUBLIC_URL=https://your-domain.zeabur.app
-API_PUBLIC_URL=https://api.your-domain.zeabur.app
-API_INTERNAL_URL=http://ipeasy-api:8080
-VITE_API_BASE_URL=/api
-WEB_API_PROXY_TARGET=http://ipeasy-api:8080
-CORS_ORIGINS=https://your-domain.zeabur.app
-API_RATE_LIMIT_WINDOW_MS=60000
-API_RATE_LIMIT_MAX_REQUESTS=120
-API_RATE_LIMIT_ORDER_MAX_REQUESTS=10
-API_BODY_LIMIT_BYTES=1048576
-OPENAPI_EXPOSURE_ENABLED=false
-
-# ---------- Database / Security ----------
-DATABASE_URL=\${POSTGRES_CONNECTION_STRING}
-REDIS_URL=\${REDIS_CONNECTION_STRING}
-APP_ENCRYPTION_KEY=$APP_ENCRYPTION_KEY
-JWT_SECRET=$JWT_SECRET
-JWT_ACCESS_EXPIRY=15m
-JWT_REFRESH_EXPIRY=7d
-SESSION_TOKEN_BYTE_SIZE=32
-
-# ---------- Legacy API Compatibility ----------
-LEGACY_API_V1_ENABLED=true
-LEGACY_API_SITE_ID=<REPLACE_WITH_YOUR_SITE_ID>
-
-# ---------- Provider Accounts ----------
-PROVIDER_PLATFORM365_ENABLED=false
-PROVIDER_PLATFORM365_BASE_URL=https://panel.365proxy.net
-PROVIDER_PLATFORM365_API_KEY=<REPLACE_WITH_YOUR_KEY>
-
-PROVIDER_NINE_EIGHT_FIVE_ENABLED=false
-PROVIDER_IPIPD_ENABLED=false
-
-# ---------- Bark Alert ----------
-BARK_ENABLED=false
-BARK_BASE_URL=https://api.day.app
-BARK_DEVICE_KEY=<REPLACE_WITH_YOUR_KEY>
-
-# ---------- Worker ----------
-WORKER_ENABLED=true
-WORKER_CONCURRENCY=5
-WORKER_POLL_INTERVAL_MS=5000
-EOF
-
-echo "✅ 环境变量文件已创建: .env.zeabur"
-
-# Step 7: 显示需要替换的占位符
-step "需要手动配置的环境变量:"
-echo ""
-echo "⚠️  以下占位符需要在 Zeabur Dashboard 中替换:"
-echo ""
-echo "1. APP_PUBLIC_SITE_URL=https://your-domain.zeabur.app"
-echo "2. APP_PUBLIC_API_URL=https://api.your-domain.zeabur.app"
-echo "3. LEGACY_API_SITE_ID=<REPLACE_WITH_YOUR_SITE_ID>"
-echo "4. 供应商 API 密钥（如果启用）"
-echo "5. Bark 设备密钥（如果启用告警）"
-echo ""
-
-# Step 8: 部署说明
-step "部署步骤:"
-echo ""
-echo "1. 登录 Zeabur Dashboard:"
-echo "   https://zeabur.com/projects/$PROJECT_ID"
-echo ""
-echo "2. 创建服务（如果尚未创建）:"
-echo "   - PostgreSQL (托管数据库)"
-echo "   - Redis (托管缓存)"
-echo "   - ipeasy-api (后端)"
-echo "   - ipeasy-web (前端)"
-echo "   - ipeasy-worker (后台任务)"
-echo ""
-echo "3. 配置环境变量:"
-echo "   复制 .env.zeabur 的内容到各服务的环境变量"
-echo ""
-echo "4. 触发部署:"
-echo "   Zeabur 会自动检测到 Git 推送并触发部署"
-echo ""
-echo "5. 运行数据库迁移:"
-echo "   zeabur exec ipeasy-api -- sh -c 'cd /app && pnpm --filter @ipeasy/db migrate:deploy'"
-echo ""
-
-# Step 9: 验证部署准备
-step "验证部署准备..."
-echo ""
-read -p "是否已完成以上步骤? (y/n) " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-  warn "请完成部署准备后再继续"
+if ((EXECUTE == 0)); then
+  printf '\nDry-run only. Re-run with --execute after reviewing the plan.\n'
   exit 0
 fi
 
-# Step 10: 完成
-step "部署准备完成！"
-echo ""
-echo "✅ 代码已推送"
-echo "✅ 环境变量已生成"
-echo "✅ 部署说明已显示"
-echo ""
-echo "📝 下一步:"
-echo "1. 在 Zeabur Dashboard 配置服务"
-echo "2. 运行数据库迁移"
-echo "3. 验证服务健康状态"
-echo ""
-echo "🔗 快速链接:"
-echo "- Zeabur Project: https://zeabur.com/projects/$PROJECT_ID"
-echo "- 环境变量文件: .env.zeabur"
-echo "- 部署指南: research/zeabur-deployment-guide.md"
-echo ""
+require_command zeabur
+require_command pnpm
+pnpm run predeploy:check
+
+if ((PUSH)); then
+  git push --set-upstream "$REMOTE" "$BRANCH"
+fi
+
+deploy_service() {
+  local service_id=$1
+  printf 'Deploying service %s...\n' "$service_id"
+  zeabur deploy \
+    --project-id "$PROJECT_ID" \
+    --service-id "$service_id" \
+    --environment-id "$ENVIRONMENT_ID" \
+    -i=false
+}
+
+deploy_service "$API_SERVICE_ID"
+
+if ((MIGRATE)); then
+  printf 'Running database migrations in API service...\n'
+  zeabur service exec \
+    --id "$API_SERVICE_ID" \
+    --env-id "$ENVIRONMENT_ID" \
+    -- sh -c 'cd /app && pnpm --filter @ipeasy/db migrate:deploy'
+fi
+
+deploy_service "$WORKER_SERVICE_ID"
+deploy_service "$WEB_SERVICE_ID"
+
+if ((HEALTH_CHECK)); then
+  "$SCRIPT_DIR/health-check-zeabur.sh" "$API_URL" "$WEB_URL"
+fi
+
+printf 'Zeabur deployment completed for commit %s.\n' "$COMMIT_SHA"

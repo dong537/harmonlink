@@ -24,8 +24,8 @@
    ```
    PORT=8080
    NODE_ID=HK_VM_18545
-   API_TOKEN=ctrl_hk_vm18545_9f8e7d6c5b4a3210fedcba9876543210
-   DATABASE_URL=postgresql://root:am476QUKV3n8k1grlSju92c5Ee0YFTwb@43.172.85.117:32463/zeabur
+   API_TOKEN=<CONTROL_NODE_TOKEN>
+   DATABASE_URL=postgresql://root:<DATABASE_PASSWORD>@43.172.85.117:32463/zeabur
    ```
 
 6. 点击 "Deploy"
@@ -35,14 +35,14 @@
 重复上述步骤，但使用以下配置：
 - **Service Name**: `control-panel-hk-18544`
 - **NODE_ID**: `HK_VM_18544`
-- **API_TOKEN**: `ctrl_hk_vm18544_1a2b3c4d5e6f7890abcdef1234567890`
+- **API_TOKEN**: `<CONTROL_NODE_TOKEN>`
 
 #### 服务 3: HK_VM_18541
 
 重复上述步骤，但使用以下配置：
 - **Service Name**: `control-panel-hk-18541`
 - **NODE_ID**: `HK_VM_18541`
-- **API_TOKEN**: `ctrl_hk_vm18541_fedcba9876543210abcdef1234567890`
+- **API_TOKEN**: `<CONTROL_NODE_TOKEN>`
 
 ### 3. 获取部署 URL
 
@@ -146,7 +146,7 @@ curl https://control-panel-hk-18545-xxx.zeabur.app/lines/test/status
 
 # 3. 测试认证成功（应该返回 200）
 curl https://control-panel-hk-18545-xxx.zeabur.app/lines/test/status \
-  -H "Authorization: Bearer ctrl_hk_vm18545_9f8e7d6c5b4a3210fedcba9876543210"
+  -H "Authorization: Bearer <CONTROL_NODE_TOKEN>"
 ```
 
 ## 故障排查

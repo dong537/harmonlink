@@ -4,6 +4,13 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 
+function runSecretScan() {
+  execFileSync(process.execPath, [resolve(root, 'scripts/scan-secrets.mjs')], {
+    cwd: root,
+    stdio: 'inherit',
+  });
+}
+
 function git(args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 }
@@ -25,6 +32,8 @@ if (existsSync(resolve(root, 'railway.json'))) {
   console.error('predeploy: root railway.json exists. It is only allowed as a temporary CLI shim and must be removed before release verification.');
   process.exit(1);
 }
+
+runSecretScan();
 
 if (relevant.length > 0) {
   console.error('predeploy: working tree is dirty. Commit or intentionally stash unrelated changes before deploying.');

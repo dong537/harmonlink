@@ -1,8 +1,14 @@
 #!/bin/bash
 
+set -euo pipefail
+
+: "${DATABASE_URL:?DATABASE_URL is required}"
+: "${ORDER_ID:?ORDER_ID is required}"
+: "${SITE_ID:?SITE_ID is required}"
+
 echo "🔍 检查测试订单状态..."
 
-docker run --rm postgres:16-alpine psql "postgresql://root:am476QUKV3n8k1grlSju92c5Ee0YFTwb@43.172.85.117:32463/zeabur" -c "
+docker run --rm postgres:16-alpine psql "$DATABASE_URL" -v order_id="$ORDER_ID" -c "
 SELECT
   id,
   kind,
@@ -12,7 +18,7 @@ SELECT
   \"completedAt\",
   \"createdAt\"
 FROM external_jobs
-WHERE \"dedicatedLineOrderId\" = '898d1d84-1c84-4914-857d-96762deb72e9'
+WHERE \"dedicatedLineOrderId\" = :'order_id'
 ORDER BY \"createdAt\" DESC
 LIMIT 1;
 "
@@ -20,10 +26,10 @@ LIMIT 1;
 echo ""
 echo "🔍 检查出口记录..."
 
-docker run --rm postgres:16-alpine psql "postgresql://root:am476QUKV3n8k1grlSju92c5Ee0YFTwb@43.172.85.117:32463/zeabur" -c "
+docker run --rm postgres:16-alpine psql "$DATABASE_URL" -v site_id="$SITE_ID" -c "
 SELECT id, \"countryCode\", \"providerCode\", \"deliveredAt\"
 FROM residential_exits
-WHERE \"siteId\" = '7f486516-aeee-4b80-9d6b-0c364c94c54a'
+WHERE \"siteId\" = :'site_id'
 ORDER BY \"createdAt\" DESC
 LIMIT 3;
 "
@@ -31,10 +37,10 @@ LIMIT 3;
 echo ""
 echo "🔍 检查专线记录..."
 
-docker run --rm postgres:16-alpine psql "postgresql://root:am476QUKV3n8k1grlSju92c5Ee0YFTwb@43.172.85.117:32463/zeabur" -c "
+docker run --rm postgres:16-alpine psql "$DATABASE_URL" -v site_id="$SITE_ID" -c "
 SELECT id, status, \"createdAt\"
 FROM dedicated_lines
-WHERE \"siteId\" = '7f486516-aeee-4b80-9d6b-0c364c94c54a'
+WHERE \"siteId\" = :'site_id'
 ORDER BY \"createdAt\" DESC
 LIMIT 3;
 "
