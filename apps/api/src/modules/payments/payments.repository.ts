@@ -55,12 +55,18 @@ export class PaymentsRepository {
   async listPaymentOrders(
     siteId: string,
     tenantId: string | null,
-    query: PageQueryDto & { userId?: string; status?: PaymentOrderStatus; channel?: PaymentChannel },
+    query: PageQueryDto & {
+      userId?: string;
+      email?: string;
+      status?: PaymentOrderStatus;
+      channel?: PaymentChannel;
+    },
   ): Promise<PageResult<PaymentOrderWithUser>> {
     const { page, pageSize } = normalizePageQuery(query);
     const where: Prisma.payment_ordersWhereInput = { siteId };
     if (tenantId) where.tenantId = tenantId;
     if (query.userId) where.userId = query.userId;
+    if (query.email) where.user = { email: { contains: query.email, mode: 'insensitive' } };
     if (query.status) where.status = query.status;
     if (query.channel) where.channel = query.channel;
 

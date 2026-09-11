@@ -9,10 +9,13 @@ import { OrdersModule } from '../orders/orders.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { TicketsModule } from '../tickets/tickets.module';
 import { ZonesModule } from '../zones/zones.module';
+import { PaymentsModule } from '../payments/payments.module';
+import { ApiKeysModule } from '../api-keys/api-keys.module';
 import { ConfigService } from '../../common/config/config.service';
 import { ApiV1CompatController } from './api-v1-compat.controller';
 import { LegacyCustomerResourcesController } from './legacy-customer-resources.controller';
 import { LegacyZonesController } from './legacy-zones.controller';
+import { LegacySurfaceController } from './legacy-surface.controller';
 
 @Module({
   imports: [
@@ -26,8 +29,10 @@ import { LegacyZonesController } from './legacy-zones.controller';
     NotificationsModule,
     TicketsModule,
     ZonesModule,
+    PaymentsModule,
+    ApiKeysModule,
   ],
-  controllers: [ApiV1CompatController, LegacyCustomerResourcesController, LegacyZonesController],
+  controllers: [ApiV1CompatController, LegacyCustomerResourcesController, LegacyZonesController, LegacySurfaceController],
   providers: [ConfigService],
 })
 export class ApiV1CompatModule {}

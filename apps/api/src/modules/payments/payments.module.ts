@@ -11,5 +11,6 @@ import { ConfigService } from '../../common/config/config.service';
   imports: [AuthModule, WalletModule],
   controllers: [PaymentsController],
   providers: [ConfigService, PaymentsRepository, CreatePaymentOrderUseCase, ConfirmPaymentOrderUseCase],
+  exports: [PaymentsRepository, CreatePaymentOrderUseCase, ConfirmPaymentOrderUseCase],
 })
 export class PaymentsModule {}

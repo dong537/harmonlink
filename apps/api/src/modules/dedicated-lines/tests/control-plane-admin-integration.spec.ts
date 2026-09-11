@@ -290,3 +290,37 @@ describe('admin control-plane inbound profile creation', () => {
     expect(await prisma.inbound_profiles.count()).toBe(0);
   });
 });
+
+describe('admin control-plane node creation', () => {
+  async function seedGroup(targetSiteId: string, code = 'hk-main'): Promise<string> {
+    const group = await prisma.node_groups.create({
+      data: { siteId: targetSiteId, code, name: 'Hong Kong Main', regionCode: 'HK' },
+    });
+    return group.id;
+  }
+
+  it('rejects a tenant from another site with 404 before creating the node', async () => {
+    const token = await operatorToken('node-cross-site-tenant@example.com');
+    const nodeGroupId = await seedGroup(siteId);
+    const otherSiteId = await seedSite();
+    const foreignTenantId = await seedTenant(otherSiteId);
+
+    const response = await request
+      .post('/api/admin/control-plane/nodes')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        nodeGroupId,
+        tenantId: foreignTenantId,
+        code: 'hk-node-1',
+        name: 'Hong Kong Node 1',
+        regionCode: 'HK',
+        baseUrl: 'https://hk-node-1.example.com',
+        apiToken: 'node-api-token',
+        capacityUnits: 10,
+      });
+
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('NOT_FOUND');
+    expect(await prisma.control_nodes.count({ where: { siteId } })).toBe(0);
+  });
+});

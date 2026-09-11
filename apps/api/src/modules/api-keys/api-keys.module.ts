@@ -8,5 +8,6 @@ import { ListApiKeysUseCase } from './use-cases/list-api-keys.use-case';
 @Module({
   controllers: [ApiKeysController],
   providers: [ApiKeysRepository, CreateApiKeyUseCase, RevokeApiKeyUseCase, ListApiKeysUseCase],
+  exports: [ListApiKeysUseCase],
 })
 export class ApiKeysModule {}

@@ -125,13 +125,18 @@ export class DedicatedLineControlPlaneAdminController {
     const credential = token(value['apiToken'], 'control_node_api_token_required');
     const nodeGroupId = token(value['nodeGroupId'], 'control_node_group_required');
     const capacityUnits = positiveInt(value['capacityUnits'], 'control_node_capacity_invalid');
+    const tenantId = optionalToken(value['tenantId']);
     const group = await prisma.node_groups.findFirst({ where: { id: nodeGroupId, siteId: ctx.siteId } });
     if (!group) throw new AppError(ErrorCode.NOT_FOUND, 'control_node_group_not_found', 404);
+    if (tenantId) {
+      const tenant = await prisma.tenants.findFirst({ where: { id: tenantId, siteId: ctx.siteId }, select: { id: true } });
+      if (!tenant) throw new AppError(ErrorCode.NOT_FOUND, 'control_node_tenant_not_found', 404);
+    }
     try {
       const row = await prisma.control_nodes.create({
         data: {
           siteId: ctx.siteId,
-          tenantId: optionalToken(value['tenantId']),
+          tenantId,
           nodeGroupId,
           code: token(value['code'], 'control_node_code_required'),
           name: token(value['name'], 'control_node_name_required'),

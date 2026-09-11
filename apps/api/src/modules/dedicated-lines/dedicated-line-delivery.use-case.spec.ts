@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthenticatedContext } from '../../common/auth/auth-context';
 
-const db = vi.hoisted(() => ({ findMany: vi.fn() }));
+const db = vi.hoisted(() => ({ findMany: vi.fn(), count: vi.fn() }));
 
 vi.mock('@ipeasy/db', () => ({
-  prisma: { dedicated_lines: { findMany: db.findMany } },
+  prisma: { dedicated_lines: { findMany: db.findMany, count: db.count } },
 }));
 
 import { DedicatedLineDeliveryUseCase } from './dedicated-line-delivery.use-case';
@@ -20,6 +20,7 @@ const ctx: AuthenticatedContext = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  db.count.mockResolvedValue(2);
   db.findMany.mockResolvedValue([{
     id: 'line-1',
     status: 'PROVISIONING',
@@ -40,6 +41,29 @@ beforeEach(() => {
 });
 
 describe('DedicatedLineDeliveryUseCase', () => {
+  it('counts only the authenticated user scope without loading client credentials', async () => {
+    const result = await new DedicatedLineDeliveryUseCase({ get: vi.fn() } as never).count(ctx);
+
+    expect(result).toBe(2);
+    expect(db.count).toHaveBeenCalledWith({
+      where: {
+        siteId: 'site-1',
+        tenantId: 'tenant-1',
+        userId: 'user-1',
+        status: { in: ['ACTIVE', 'DEGRADED'] },
+      },
+    });
+    expect(db.findMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a user context without a tenant before touching the database', async () => {
+    await expect(new DedicatedLineDeliveryUseCase({ get: vi.fn() } as never).count({ ...ctx, tenantId: null })).rejects.toMatchObject({
+      httpStatus: 403,
+      reasonKey: 'tenant_required',
+    });
+    expect(db.count).not.toHaveBeenCalled();
+  });
+
   it('returns BigInt limits as lossless decimal strings', async () => {
     const result = await new DedicatedLineDeliveryUseCase({ get: vi.fn() } as never).list(ctx);
 

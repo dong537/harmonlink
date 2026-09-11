@@ -35,6 +35,21 @@ type DeliveryLineRow = {
 export class DedicatedLineDeliveryUseCase {
   constructor(private readonly config: ConfigService) {}
 
+  async count(ctx: AuthenticatedContext): Promise<number> {
+    requireUserContext(ctx);
+    if (!ctx.tenantId) {
+      throw new AppError(ErrorCode.PERMISSION_DENIED, 'tenant_required', 403);
+    }
+    return prisma.dedicated_lines.count({
+      where: {
+        siteId: ctx.siteId,
+        tenantId: ctx.tenantId,
+        userId: ctx.ownerId,
+        status: { in: ['ACTIVE', 'DEGRADED'] },
+      },
+    });
+  }
+
   async list(ctx: AuthenticatedContext) {
     requireUserContext(ctx);
     const lines = await prisma.dedicated_lines.findMany({

@@ -58,6 +58,33 @@ describe('PaymentsRepository', () => {
     });
   });
 
+  it('applies an email filter to both the count and item query', async () => {
+    vi.mocked(prisma.payment_orders.count).mockResolvedValue(1);
+    vi.mocked(prisma.payment_orders.findMany).mockResolvedValue([]);
+
+    const repo = new PaymentsRepository();
+
+    await repo.listPaymentOrders('site-1', 'tenant-1', {
+      page: 1,
+      pageSize: 20,
+      email: 'Customer@Example.com',
+    });
+
+    const expectedWhere = {
+      siteId: 'site-1',
+      tenantId: 'tenant-1',
+      user: { email: { contains: 'Customer@Example.com', mode: 'insensitive' } },
+    };
+    expect(prisma.payment_orders.count).toHaveBeenCalledWith({ where: expectedWhere });
+    expect(prisma.payment_orders.findMany).toHaveBeenCalledWith({
+      where: expectedWhere,
+      include: { user: { select: paymentOrderUserSelect } },
+      orderBy: { createdAt: 'desc' },
+      skip: 0,
+      take: 20,
+    });
+  });
+
   it('loads a payment detail with the same customer account projection', async () => {
     vi.mocked(prisma.payment_orders.findFirst).mockResolvedValue(paymentOrderWithUser() as never);
 
