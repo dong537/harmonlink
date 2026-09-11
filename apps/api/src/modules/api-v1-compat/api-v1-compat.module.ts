@@ -16,6 +16,12 @@ import { ApiV1CompatController } from './api-v1-compat.controller';
 import { LegacyCustomerResourcesController } from './legacy-customer-resources.controller';
 import { LegacyZonesController } from './legacy-zones.controller';
 import { LegacySurfaceController } from './legacy-surface.controller';
+import { LegacyAdminDedicatedController } from './legacy-admin-dedicated.controller';
+import { LegacyAdminControlPlaneController } from './legacy-admin-control-plane.controller';
+import { LegacyAdminUsersController } from './legacy-admin-users.controller';
+import { LegacyAdminSkusController } from './legacy-admin-skus.controller';
+import { LegacyAdminUnsupportedController } from './legacy-admin-unsupported.controller';
+import { ListDedicatedLineLimitsUseCase } from '../dedicated-lines/list-dedicated-line-limits.use-case';
 
 @Module({
   imports: [
@@ -32,7 +38,17 @@ import { LegacySurfaceController } from './legacy-surface.controller';
     PaymentsModule,
     ApiKeysModule,
   ],
-  controllers: [ApiV1CompatController, LegacyCustomerResourcesController, LegacyZonesController, LegacySurfaceController],
-  providers: [ConfigService],
+  controllers: [
+    ApiV1CompatController,
+    LegacyCustomerResourcesController,
+    LegacyZonesController,
+    LegacySurfaceController,
+    LegacyAdminDedicatedController,
+    LegacyAdminControlPlaneController,
+    LegacyAdminUsersController,
+    LegacyAdminSkusController,
+    LegacyAdminUnsupportedController,
+  ],
+  providers: [ConfigService, ListDedicatedLineLimitsUseCase],
 })
 export class ApiV1CompatModule {}

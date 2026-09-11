@@ -125,9 +125,12 @@ export class ApiV1CompatController {
   }
 
   @Get('users/profile')
-  @RequireUser()
+  @RequireAuth()
   async profile(@CurrentContext() ctx: AuthenticatedContext) {
     this.assertEnabled(ctx);
+    if (ctx.ownerType !== 'USER') {
+      return this.legacyAdminProfile(ctx);
+    }
     const [profile, wallet] = await Promise.all([
       this.getMe.execute(ctx),
       this.wallet.getWalletByUserId(ctx.ownerId, ctx.siteId, ctx.tenantId),
@@ -331,6 +334,36 @@ export class ApiV1CompatController {
     const admin = await prisma.admin_users.findFirst({ where: { id: owner.ownerId, siteId: owner.siteId }, select: { email: true } });
     if (!admin) throw new AppError(ErrorCode.AUTH_REQUIRED, 'session_expired', 401);
     return { id: owner.ownerId, email: admin.email, role: 'admin' };
+  }
+
+  private async legacyAdminProfile(ctx: AuthenticatedContext) {
+    if (!['PLATFORM_ADMIN', 'TENANT_ADMIN', 'OPERATOR'].includes(ctx.ownerType)) {
+      throw new AppError(ErrorCode.PERMISSION_DENIED, 'insufficient_permissions', 403);
+    }
+    if (ctx.ownerType === 'TENANT_ADMIN' && !ctx.tenantId) {
+      throw new AppError(ErrorCode.PERMISSION_DENIED, 'tenant_context_required', 403);
+    }
+    const admin = await prisma.admin_users.findFirst({
+      where: {
+        id: ctx.ownerId,
+        siteId: ctx.siteId,
+        ...(ctx.ownerType === 'TENANT_ADMIN' ? { tenantId: ctx.tenantId! } : {}),
+      },
+      select: { id: true, email: true, role: true, status: true },
+    });
+    if (!admin) throw new AppError(ErrorCode.AUTH_REQUIRED, 'session_expired', 401);
+    return {
+      id: admin.id,
+      email: admin.email,
+      name: admin.email,
+      phone: null,
+      status: admin.status,
+      kycStatus: 'NOT_APPLICABLE',
+      riskStatus: 'NOT_APPLICABLE',
+      role: 'admin',
+      balance: '0',
+      currency: this.config.get('APP_PLATFORM_CURRENCY'),
+    };
   }
 
   private async parseDedicatedInput(ctx: AuthenticatedContext, body: LegacyDedicatedBody, requireCountry: boolean) {

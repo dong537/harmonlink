@@ -37,6 +37,33 @@ export type LegacyUserAdminScope = {
   tenantId: string | null;
 };
 
+export type LegacyAdminUserStatus = 'ACTIVE' | 'DISABLED';
+
+export type LegacyAdminUserQuery = {
+  page?: number;
+  pageSize?: number;
+  email?: string;
+  status?: LegacyAdminUserStatus;
+};
+
+export type LegacyAdminUserProjection = {
+  id: string;
+  legacyId: number;
+  email: string;
+  name: string | null;
+  tenantId: string;
+  status: UserStatus;
+  createdAt: Date;
+  balance: string | null;
+};
+
+export type LegacyAdminUserPage = {
+  page: number;
+  pageSize: number;
+  total: number;
+  items: LegacyAdminUserProjection[];
+};
+
 export type ResolvedLegacyUser = {
   userId: string;
   siteId: string;
@@ -139,5 +166,107 @@ export class UsersRepository {
     ]);
 
     return { page, pageSize, total, items };
+  }
+
+  /**
+   * Reads the narrow projection required by the frozen admin users page.
+   * This deliberately lives beside, rather than inside, the canonical users
+   * list contract because the legacy client needs a numeric identity and a
+   * wallet projection.
+   */
+  async listLegacyAdminUsers(
+    siteId: string,
+    tenantId: string | null,
+    query: LegacyAdminUserQuery = {},
+  ): Promise<LegacyAdminUserPage> {
+    const { page, pageSize } = normalizePageQuery(query, { maxPageSize: 100 });
+    const where: Prisma.usersWhereInput = {
+      siteId,
+      ...(tenantId ? { tenantId } : {}),
+    };
+    if (query.email?.trim()) {
+      where.email = { contains: query.email.trim(), mode: 'insensitive' };
+    }
+    if (query.status === 'ACTIVE') {
+      where.status = 'ACTIVE';
+    } else if (query.status === 'DISABLED') {
+      where.status = { in: ['SUSPENDED', 'BANNED'] };
+    }
+
+    const [total, rows] = await Promise.all([
+      prisma.users.count({ where }),
+      prisma.users.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: {
+          id: true,
+          legacyId: true,
+          email: true,
+          name: true,
+          tenantId: true,
+          status: true,
+          createdAt: true,
+          wallets: {
+            take: 1,
+            select: { available: true },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      page,
+      pageSize,
+      total,
+      items: rows.map((row) => ({
+        id: row.id,
+        legacyId: row.legacyId,
+        email: row.email,
+        name: row.name,
+        tenantId: row.tenantId,
+        status: row.status,
+        createdAt: row.createdAt,
+        balance: row.wallets?.[0]?.available.toString() ?? null,
+      })),
+    };
+  }
+
+  async findLegacyAdminUserById(
+    userId: string,
+    scope: LegacyUserAdminScope,
+  ): Promise<LegacyAdminUserProjection> {
+    const row = await prisma.users.findFirst({
+      where: {
+        id: userId,
+        siteId: scope.siteId,
+        ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+      },
+      select: {
+        id: true,
+        legacyId: true,
+        email: true,
+        name: true,
+        tenantId: true,
+        status: true,
+        createdAt: true,
+        wallets: {
+          take: 1,
+          select: { available: true },
+        },
+      },
+    });
+    if (!row) throw new AppError(ErrorCode.NOT_FOUND, 'user_not_found', 404);
+    return {
+      id: row.id,
+      legacyId: row.legacyId,
+      email: row.email,
+      name: row.name,
+      tenantId: row.tenantId,
+      status: row.status,
+      createdAt: row.createdAt,
+      balance: row.wallets?.[0]?.available.toString() ?? null,
+    };
   }
 }

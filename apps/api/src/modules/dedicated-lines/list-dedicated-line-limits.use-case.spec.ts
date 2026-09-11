@@ -66,6 +66,20 @@ describe('ListDedicatedLineLimitsUseCase', () => {
     }));
   });
 
+  it('honors an explicit compatibility page-size ceiling without changing the default ceiling', async () => {
+    const result = await new ListDedicatedLineLimitsUseCase().execute(
+      context(),
+      { page: 1, pageSize: 100 },
+      { maxPageSize: 100 },
+    );
+
+    expect(db.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      skip: 0,
+      take: 100,
+    }));
+    expect(result.pageSize).toBe(100);
+  });
+
   it('rejects non-admin callers without querying', async () => {
     await expect(new ListDedicatedLineLimitsUseCase().execute(
       context({ ownerType: 'USER', tenantId: 'tenant-1' }), {},

@@ -133,6 +133,18 @@ describe('legacy /api/v1 compatibility API', () => {
     expect(
       await prisma.sessions.count({ where: { ownerType: 'ADMIN_USER', ownerId: adminId } }),
     ).toBe(2);
+
+    const profile = await request
+      .get('/api/v1/users/profile')
+      .set('Authorization', `Bearer ${login.body.access_token}`);
+    expect(profile.status).toBe(200);
+    expect(profile.body).toMatchObject({
+      id: adminId,
+      email: 'legacy-admin@example.com',
+      name: 'legacy-admin@example.com',
+      role: 'admin',
+      balance: '0',
+    });
   });
 
   it('keeps admin-login admin-only and rejects an ordinary user with legacy invalid credentials', async () => {

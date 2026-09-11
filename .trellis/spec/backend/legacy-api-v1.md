@@ -413,3 +413,76 @@ record the Docker deployment ID and build/runtime evidence
 run the migration command
 verify /ready, same-origin auth/capabilities, the lazy asset graph, and Worker PID
 ```
+
+## Scenario: NestJS Compatibility Route Registration
+
+### 1. Scope / Trigger
+
+- Trigger: registering several legacy URL spellings for the same compatibility
+  operation in a NestJS controller.
+- Applies to every controller under `apps/api/src/modules/api-v1-compat` and
+  any future controller that exposes both `/api/v1/...` and `/v1/...` paths.
+
+### 2. Signatures
+
+- A single HTTP method may use one decorator with a path array, for example
+  `@Get(['/api/v1/admin/users', '/v1/admin/users'])`.
+- Different HTTP methods must use separate handlers, even when they share a
+  service method and URL path.
+- Route metadata is verified through Nest's reflected `PATH_METADATA` and
+  `METHOD_METADATA`, not only through a controller method name.
+
+### 3. Contracts
+
+- Every frozen method/path pair must produce one registered Nest route.
+- Path aliases for the same method are declared in an array on one decorator;
+  stacking multiple `@Get`/`@Post` decorators on one handler is forbidden.
+- A handler must have exactly one HTTP method. Request/response translation may
+  be shared in a private service or helper, but route metadata must stay explicit.
+
+### 4. Validation & Error Matrix
+
+- Duplicate decorators for one method -> reject in route-metadata audit; do not
+  rely on whichever path Nest leaves in `PATH_METADATA`.
+- Different methods on one handler -> split handlers before running the API.
+- Missing frozen method/path pair -> fail the compatibility route audit; a typed
+  runtime `404` is not an acceptable substitute for a missing registration.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `@Post(['/api/v1/admin/users', '/v1/admin/users'])` on a dedicated
+  `createUser` handler, with a separate `@Get([...])` list handler.
+- Base: both aliases call the same use case and return the same raw legacy DTO.
+- Bad: stacking `@Get('/a')` and `@Get('/b')` on one method, or combining
+  `@Get` and `@Post` on one method; later decorators overwrite reflected path
+  metadata and silently remove routes.
+
+### 6. Tests Required
+
+- Reflection test: enumerate non-test controllers and assert every frozen
+  method/path pair is present exactly once after path normalization.
+- Controller unit tests: cover each handler's method-specific guard and raw
+  response shape.
+- Runtime smoke: probe representative aliases for `200`, typed auth errors,
+  and typed unsupported-capability responses instead of accepting a bare `404`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+@Get('/api/v1/admin/users')
+@Get('/v1/admin/users')
+@Post('/api/v1/admin/users')
+listOrCreate() {}
+```
+
+#### Correct
+
+```ts
+@Get(['/api/v1/admin/users', '/v1/admin/users'])
+list() {}
+
+@Post(['/api/v1/admin/users', '/v1/admin/users'])
+create() {}
+```

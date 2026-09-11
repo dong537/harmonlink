@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { prisma } from '@ipeasy/db';
 import type { AuthenticatedContext } from '../../common/auth/auth-context';
 import { ApiV1CompatController } from './api-v1-compat.controller';
 
@@ -27,6 +28,7 @@ function createController() {
   const createOrder = { execute: vi.fn() };
   const renew = { execute: vi.fn() };
   const login = { executeLegacy: vi.fn() };
+  const getMe = { execute: vi.fn() };
   const wallet = {
     getWalletByUserId: vi.fn().mockResolvedValue({ available: { toString: () => '100.00' }, currency: 'CNY' }),
   };
@@ -43,12 +45,12 @@ function createController() {
     createOrder as never,
     {} as never,
     renew as never,
-    {} as never,
+    getMe as never,
     wallet as never,
     resolveZone as never,
   );
 
-  return { controller, config, catalog, quote, createOrder, renew, login, wallet, resolveZone };
+  return { controller, config, catalog, quote, createOrder, renew, login, getMe, wallet, resolveZone };
 }
 
 describe('ApiV1CompatController', () => {
@@ -89,6 +91,38 @@ describe('ApiV1CompatController', () => {
       refresh_token: 'rt_refresh-token',
       user: { id: 'admin-1', email: 'admin@example.com', role: 'admin' },
     });
+  });
+
+  it('returns a scoped admin profile instead of applying the user-only profile guard', async () => {
+    const { controller, getMe, wallet } = createController();
+    const findAdmin = vi.spyOn(prisma.admin_users, 'findFirst').mockResolvedValue({
+      id: 'admin-1',
+      email: 'admin@example.com',
+      role: 'PLATFORM_ADMIN',
+      status: 'ACTIVE',
+    } as never);
+
+    const result = await controller.profile({
+      ...userContext,
+      ownerId: 'admin-1',
+      ownerType: 'PLATFORM_ADMIN',
+      tenantId: null,
+    });
+
+    expect(findAdmin).toHaveBeenCalledWith({
+      where: { id: 'admin-1', siteId: 'site-1' },
+      select: { id: true, email: true, role: true, status: true },
+    });
+    expect(getMe.execute).not.toHaveBeenCalled();
+    expect(wallet.getWalletByUserId).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      id: 'admin-1',
+      email: 'admin@example.com',
+      name: 'admin@example.com',
+      role: 'admin',
+      balance: '0',
+    });
+    findAdmin.mockRestore();
   });
 
   it('keeps the dedicated admin-login owner restriction', async () => {

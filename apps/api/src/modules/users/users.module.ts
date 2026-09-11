@@ -10,6 +10,6 @@ import { ConfigService } from '../../common/config/config.service';
 @Module({
   controllers: [UsersController],
   providers: [UsersRepository, GetMeUseCase, UpdateMeUseCase, ImpersonateUserUseCase, CreateUserUseCase, ConfigService],
-  exports: [UsersRepository, GetMeUseCase],
+  exports: [UsersRepository, GetMeUseCase, CreateUserUseCase],
 })
 export class UsersModule {}

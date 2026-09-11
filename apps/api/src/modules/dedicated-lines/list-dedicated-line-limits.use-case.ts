@@ -7,12 +7,16 @@ import { PageQueryDto, normalizePageQuery } from '../../common/pagination/pagina
 
 @Injectable()
 export class ListDedicatedLineLimitsUseCase {
-  async execute(ctx: AuthenticatedContext, query: PageQueryDto = {}) {
+  async execute(
+    ctx: AuthenticatedContext,
+    query: PageQueryDto = {},
+    options: { maxPageSize?: number } = {},
+  ) {
     if (ctx.ownerType !== 'PLATFORM_ADMIN' && ctx.ownerType !== 'TENANT_ADMIN') {
       throw new AppError(ErrorCode.PERMISSION_DENIED, 'admin_only', 403);
     }
 
-    const { page, pageSize } = normalizePageQuery(query);
+    const { page, pageSize } = normalizePageQuery(query, options);
     const where = {
       siteId: ctx.siteId,
       ...(ctx.ownerType === 'TENANT_ADMIN' ? { tenantId: ctx.tenantId ?? '' } : {}),
