@@ -49,6 +49,7 @@
 - SKU protocol values are lowercase (`vless`, `vmess`, `shadowsocks`, `socks5`, `http`) because the frozen frontend filters by lowercase values.
 - Legacy line routes accept only the scoped numeric `legacyId`; UUID-to-number coercion is forbidden. Resolution always includes `siteId + tenantId + userId`.
 - Legacy line route IDs must match the canonical decimal grammar `/^[1-9]\\d*$/` before conversion. Reject whitespace, leading zeros, signs, exponent notation, decimal notation, zero, and values outside JavaScript's safe-integer range with `VALIDATION_ERROR / dedicated_line_id_invalid`.
+- Legacy admin user status/delete routes resolve the persisted `users.legacyId` with `siteId + tenantId` scope, delegate the mutation to the canonical user use case, and return only the numeric legacy identity (`status` is lowercase `active`/`disabled`). Canonical UUIDs and uppercase status values must never cross this boundary; deletion remains protected by the full business-record guard.
 - Provider/order/projection workers remain disabled during compatibility smoke checks. Enabling them is a separate production gate.
 
 ### 4. Validation & Error Matrix

@@ -218,6 +218,42 @@ describe('dedicated-line inventory reservation', () => {
     expect(await prisma.ledger_entries.count({ where: { type: 'DEBIT' } })).toBe(1);
   });
 
+  it('finds a committed replay when the debit key differs from the order key', async () => {
+    const fixture = await seedReservationFixture('line-replay-independent-debit@example.com', 1);
+    const input = request(
+      fixture.siteId,
+      fixture.tenantId,
+      fixture.userId,
+      fixture.accountId,
+      fixture.skuId,
+      'independent-debit-order-key',
+    );
+    await useCase.execute(input);
+
+    await expect(repository.findOrderReplay({
+      siteId: fixture.siteId,
+      tenantId: fixture.tenantId,
+      userId: fixture.userId,
+      idempotencyKey: input.idempotencyKey,
+      request: {
+        skuCode: input.orderSnapshot.skuCode,
+        countryCode: input.countryCode,
+        quantity: input.quantity,
+        durationDays: input.orderSnapshot.durationDays,
+        currency: input.orderSnapshot.currency,
+        regionCode: null,
+        businessType: null,
+        zoneCode: null,
+      },
+    })).resolves.toMatchObject({
+      status: 'QUEUED',
+      orderId: expect.any(String),
+      reservationId: expect.any(String),
+      jobId: expect.any(String),
+      replayed: true,
+    });
+  });
+
   it('rejects a purchase when archiving the selected Zone wins the row-lock race', async () => {
     const fixture = await seedReservationFixture('line-zone-race@example.com', 1);
     const zone = await prisma.user_zones.create({

@@ -19,6 +19,14 @@ export interface CreateUserDto {
   tenantId?: string;
 }
 
+export interface UpdateUserStatusDto {
+  status?: string;
+}
+
+export interface ResetUserPasswordDto {
+  password?: string;
+}
+
 export interface CreatedUserDto {
   id: string;
   email: string;

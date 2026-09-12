@@ -937,6 +937,7 @@ The target user owns the business purchase while the admin actor is preserved se
 - Resetting a password must hash the new password, revoke active user sessions, and write `users.reset_password` audit.
 - Impersonation must issue an opaque short-lived `USER` session token for an `ACTIVE` scoped user, store only its SHA-256 hash, and write `users.impersonate` audit.
 - Delete is intentionally limited to empty customer records. A customer with orders, proxies, payment orders, tickets, or ledger entries must return `VALIDATION_ERROR / user_has_business_records`; do not cascade-delete business history.
+- Dedicated-line ownership is business history too: before deletion, count the user's orders, lines, reservations, Zones, external jobs, placement/policy rows, projections, delivery/migration/domain rows, health/smoke records, and outbox events. Any such row returns `user_has_business_records`; account-local sessions, API keys, pricing overrides, notifications, and an empty wallet may be removed in the same transaction.
 - Wallet adjustment, assisted ordering, and pricing updates remain owned by their respective wallet, order, and pricing use cases. User management may launch them but must not duplicate their DB writes.
 
 ### 4. Validation & Error Matrix

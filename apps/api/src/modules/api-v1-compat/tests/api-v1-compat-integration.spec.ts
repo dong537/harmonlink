@@ -147,6 +147,53 @@ describe('legacy /api/v1 compatibility API', () => {
     });
   });
 
+  it('keeps legacy admin user mutations numeric and preserves the api-key child route', async () => {
+    const { userId } = await seedUser(siteId, tenantId, {
+      email: 'legacy-admin-mutation-user@example.com',
+      password: PASSWORD,
+    });
+    const user = await prisma.users.findUniqueOrThrow({
+      where: { id: userId },
+      select: { legacyId: true },
+    });
+    await seedAdminUser(siteId, null, 'PLATFORM_ADMIN', {
+      email: 'legacy-admin-mutation@example.com',
+      password: PASSWORD,
+    });
+
+    const login = await request.post('/api/v1/auth/login').send({
+      email: 'legacy-admin-mutation@example.com',
+      password: PASSWORD,
+    });
+    expect([200, 201]).toContain(login.status);
+    const token = login.body.access_token as string;
+
+    const status = await request
+      .put(`/api/v1/admin/users/${user.legacyId}/status`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'disabled' });
+    expect(status.status).toBe(200);
+    expect(status.body).toEqual({ id: user.legacyId, status: 'disabled' });
+
+    const apiKeyDelete = await request
+      .delete(`/api/v1/admin/users/${user.legacyId}/api-key`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(apiKeyDelete.status).toBe(501);
+    expect(apiKeyDelete.body).toMatchObject({
+      statusCode: 501,
+      errorCode: 'UNSUPPORTED_CAPABILITY',
+      message: 'legacy_admin_user_mutation_unavailable',
+      path: `/api/v1/admin/users/${user.legacyId}/api-key`,
+    });
+
+    const deletion = await request
+      .delete(`/api/v1/admin/users/${user.legacyId}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(deletion.status).toBe(200);
+    expect(deletion.body).toEqual({ id: user.legacyId });
+    expect(await prisma.users.findUnique({ where: { id: userId } })).toBeNull();
+  });
+
   it('keeps admin-login admin-only and rejects an ordinary user with legacy invalid credentials', async () => {
     await seedUser(siteId, tenantId, { email: 'legacy-user-admin-route@example.com', password: PASSWORD });
 

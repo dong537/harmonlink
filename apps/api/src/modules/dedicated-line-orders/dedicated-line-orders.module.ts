@@ -12,15 +12,20 @@ import { ProcessDedicatedLineOrderUseCase } from './process-dedicated-line-order
 import { DedicatedLinePlacementRepository } from './dedicated-line-placement.repository';
 import { WalletModule } from '../wallet/wallet.module';
 import { ZonesModule } from '../zones/zones.module';
+import { DedicatedLineOrderAdminController } from './dedicated-line-order-admin.controller';
+import { DedicatedLineOrderAdminRepository } from './dedicated-line-order-admin.repository';
+import { DedicatedLineOrderAdminUseCase } from './dedicated-line-order-admin.use-case';
 
 @Module({
   imports: [ProvidersModule, CatalogModule, WalletModule, ZonesModule],
-  controllers: [DedicatedLineOrdersController],
+  controllers: [DedicatedLineOrdersController, DedicatedLineOrderAdminController],
   providers: [
     ConfigService,
     DedicatedLineInventoryRepository,
     DedicatedLineOrderRepository,
     DedicatedLinePlacementRepository,
+    DedicatedLineOrderAdminRepository,
+    DedicatedLineOrderAdminUseCase,
     ReclaimExpiredReservationsRepository,
     ProcessDedicatedLineOrderUseCase,
     CreateDedicatedLineOrderUseCase,
@@ -38,6 +43,8 @@ import { ZonesModule } from '../zones/zones.module';
   exports: [
     DedicatedLineInventoryRepository,
     DedicatedLineOrderRepository,
+    DedicatedLineOrderAdminRepository,
+    DedicatedLineOrderAdminUseCase,
     ProcessDedicatedLineOrderUseCase,
     CreateDedicatedLineOrderUseCase,
     ReclaimExpiredReservationsUseCase,

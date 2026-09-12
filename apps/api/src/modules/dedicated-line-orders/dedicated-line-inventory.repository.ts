@@ -243,8 +243,20 @@ export class DedicatedLineInventoryRepository implements InventoryReservationSou
         throw new AppError(ErrorCode.INTERNAL_ERROR, 'dedicated_line_order_snapshot_missing', 500);
       }
 
-      const ledger = await tx.ledger_entries.findUnique({
-        where: { idempotencyKey: expectedLedgerKey(input) },
+      // The debit key is persisted independently from the order idempotency
+      // key. Resolve the committed charge through its scoped reservation
+      // relation instead of reconstructing a key that callers may have
+      // supplied differently.
+      const ledger = await tx.ledger_entries.findFirst({
+        where: {
+          siteId: input.siteId,
+          tenantId: input.tenantId,
+          userId: input.userId,
+          relatedId: reservation.id,
+          type: 'DEBIT',
+          reason: 'dedicated_line_order',
+        },
+        orderBy: { createdAt: 'asc' },
         select: {
           idempotencyKey: true,
           amount: true,
@@ -719,17 +731,16 @@ async function assertReplayCharge(
   const expectedAmount = toDecimalString(`-${orderTotalPrice}`);
   const expectedCurrency = orderCurrency.trim().toUpperCase();
   if (
-    ledger.idempotencyKey !== expectedLedgerKey(input)
+    // The charge key is an explicit part of the reservation request. The
+    // order API normally derives it from the order key, but the repository
+    // contract also permits callers to provide a distinct, scoped debit key.
+    ledger.idempotencyKey !== input.charge.idempotencyKey.trim()
     || ledger.amount.toString() !== expectedAmount
     || ledger.currency !== expectedCurrency
     || ledger.relatedId !== reservationId
   ) {
     throw new AppError(ErrorCode.IDEMPOTENCY_CONFLICT, 'dedicated_line_order_idempotency_conflict', 409);
   }
-}
-
-function expectedLedgerKey(input: Pick<ReserveDedicatedLineStockInput, 'siteId' | 'tenantId' | 'userId' | 'idempotencyKey'>): string {
-  return `dedicated-line-order:${input.siteId}:${input.tenantId}:${input.userId}:${input.idempotencyKey}`;
 }
 
 function isScopedReservationIdempotencyConflict(error: unknown): boolean {

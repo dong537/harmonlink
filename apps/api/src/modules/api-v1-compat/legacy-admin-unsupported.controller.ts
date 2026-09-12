@@ -5,6 +5,8 @@ import { RequireAuth } from '../../common/auth/guards';
 import { AppError } from '../../common/errors/app-error';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { ConfigService } from '../../common/config/config.service';
+import { AdminUserOperationsUseCase } from '../users/use-cases/admin-user-operations.use-case';
+import { UsersRepository } from '../users/users.repository';
 import { assertLegacyApiAccess } from './legacy-site-access';
 
 /**
@@ -12,12 +14,17 @@ import { assertLegacyApiAccess } from './legacy-site-access';
  * owner in the dedicated-line platform. The frozen client used to receive a
  * misleading 404 for these paths; a typed capability error lets it render a
  * real unavailable state and keeps unsupported residential/legacy mutations
- * away from the database.
+ * away from the database. The two supported customer mutations below bridge
+ * the frozen numeric identity to the canonical user operation use case.
  */
 @Controller('v1')
 @RequireAuth()
 export class LegacyAdminUnsupportedController {
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly users: UsersRepository,
+    private readonly adminUserOperations: AdminUserOperationsUseCase,
+  ) {}
 
   @Get([
     'admin/statistics',
@@ -112,7 +119,23 @@ export class LegacyAdminUnsupportedController {
     return this.unsupported(ctx, 'legacy_admin_user_resource_unavailable');
   }
 
-  @Put(['admin/users/:id/status', 'admin/users/:id/role', 'admin/users/:id/dedicated-prefs'])
+  @Put('admin/users/:id/status')
+  async updateLegacyUserStatus(
+    @CurrentContext() ctx: AuthenticatedContext,
+    @Param('id') id: string,
+    @Body() body: { status?: unknown },
+  ) {
+    this.assertAdminAccess(ctx);
+    const legacyId = readLegacyUserId(id);
+    const status = mapLegacyUserStatus(body?.status);
+    const target = await this.users.resolveLegacyIdForScope(legacyId, legacyUserScope(ctx));
+    await this.adminUserOperations.updateStatus(ctx, target.userId, { status });
+    // The frozen admin bundle uses the persisted numeric identity and lower-
+    // case status values. Keep the canonical UUID/status behind this adapter.
+    return { id: legacyId, status: toLegacyUserStatus(status) };
+  }
+
+  @Put(['admin/users/:id/role', 'admin/users/:id/dedicated-prefs'])
   updateHistoricalUserPut(
     @CurrentContext() ctx: AuthenticatedContext,
     @Param('id') _id: string,
@@ -130,7 +153,19 @@ export class LegacyAdminUnsupportedController {
     return this.unsupported(ctx, 'legacy_admin_user_mutation_unavailable');
   }
 
-  @Delete(['admin/users/:id', 'admin/users/:id/api-key'])
+  @Delete('admin/users/:id')
+  async deleteLegacyUser(
+    @CurrentContext() ctx: AuthenticatedContext,
+    @Param('id') id: string,
+  ) {
+    this.assertAdminAccess(ctx);
+    const legacyId = readLegacyUserId(id);
+    const target = await this.users.resolveLegacyIdForScope(legacyId, legacyUserScope(ctx));
+    await this.adminUserOperations.delete(ctx, target.userId);
+    return { id: legacyId };
+  }
+
+  @Delete('admin/users/:id/api-key')
   deleteHistoricalUser(@CurrentContext() ctx: AuthenticatedContext, @Param('id') _id: string): never {
     return this.unsupported(ctx, 'legacy_admin_user_mutation_unavailable');
   }
@@ -163,6 +198,11 @@ export class LegacyAdminUnsupportedController {
   }
 
   private unsupported(ctx: AuthenticatedContext, reasonKey: string): never {
+    this.assertAdminAccess(ctx);
+    throw new AppError(ErrorCode.UNSUPPORTED_CAPABILITY, reasonKey, 501);
+  }
+
+  private assertAdminAccess(ctx: AuthenticatedContext): void {
     assertLegacyApiAccess(this.config, ctx);
     if (ctx.ownerType !== 'PLATFORM_ADMIN' && ctx.ownerType !== 'TENANT_ADMIN') {
       throw new AppError(ErrorCode.PERMISSION_DENIED, 'insufficient_permissions', 403);
@@ -170,6 +210,36 @@ export class LegacyAdminUnsupportedController {
     if (ctx.ownerType === 'TENANT_ADMIN' && !ctx.tenantId) {
       throw new AppError(ErrorCode.PERMISSION_DENIED, 'tenant_context_required', 403);
     }
-    throw new AppError(ErrorCode.UNSUPPORTED_CAPABILITY, reasonKey, 501);
   }
+}
+
+function legacyUserScope(ctx: AuthenticatedContext): { siteId: string; tenantId: string | null } {
+  return {
+    siteId: ctx.siteId,
+    tenantId: ctx.ownerType === 'TENANT_ADMIN' ? ctx.tenantId : null,
+  };
+}
+
+function readLegacyUserId(value: string): number {
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new AppError(ErrorCode.VALIDATION_ERROR, 'user_id_invalid', 400);
+  }
+  const id = Number(value);
+  if (!Number.isSafeInteger(id)) {
+    throw new AppError(ErrorCode.VALIDATION_ERROR, 'user_id_invalid', 400);
+  }
+  return id;
+}
+
+function mapLegacyUserStatus(value: unknown): 'ACTIVE' | 'SUSPENDED' {
+  if (value === 'active') return 'ACTIVE';
+  if (value === 'disabled') return 'SUSPENDED';
+  if (value === 'deleted') {
+    throw new AppError(ErrorCode.UNSUPPORTED_CAPABILITY, 'legacy_admin_deleted_users_unavailable', 501);
+  }
+  throw new AppError(ErrorCode.VALIDATION_ERROR, 'legacy_admin_user_status_invalid', 400);
+}
+
+function toLegacyUserStatus(value: 'ACTIVE' | 'SUSPENDED'): 'active' | 'disabled' {
+  return value === 'ACTIVE' ? 'active' : 'disabled';
 }
