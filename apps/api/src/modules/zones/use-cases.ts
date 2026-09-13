@@ -76,7 +76,7 @@ export class ResolveActiveZoneUseCase {
   constructor(private readonly repository: ZonesRepository) {}
 
   async execute(scope: ZoneScope, code: unknown): Promise<Zone | null> {
-    if (code === undefined || code === null || code === '') return null;
+    if (code === undefined || code === null) return null;
     const normalized = normalizeZoneCode(code);
     const zone = await this.repository.findByCode(scope, normalized);
     if (!zone) throw new AppError(ErrorCode.NOT_FOUND, 'zone_not_found', 404);

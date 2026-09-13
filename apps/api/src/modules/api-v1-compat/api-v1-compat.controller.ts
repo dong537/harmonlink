@@ -410,7 +410,7 @@ function readOptionalString(value: unknown): string | null {
 }
 
 function readOptionalZoneCode(value: unknown): string | undefined {
-  if (value === undefined || value === null || value === '') return undefined;
+  if (value === undefined || value === null) return undefined;
   if (typeof value !== 'string') {
     throw new AppError(ErrorCode.VALIDATION_ERROR, 'zone_code_invalid', 400);
   }

@@ -230,7 +230,7 @@ function parseInput(body: unknown): { durationDays: number; idempotencyKey: stri
 }
 
 function normalizeOptionalZoneCode(value: unknown): string | null {
-  if (value === undefined || value === null || value === '') return null;
+  if (value === undefined || value === null) return null;
   return normalizeZoneCode(value);
 }
 

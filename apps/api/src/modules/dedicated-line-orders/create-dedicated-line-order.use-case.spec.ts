@@ -231,6 +231,23 @@ describe('CreateDedicatedLineOrderUseCase', () => {
     );
   });
 
+  it.each(['', '   '])('rejects blank zoneCode %j before any order lookup', async (zoneCode) => {
+    const inventory = inventoryRepo(freshRoute);
+    const useCase = new CreateDedicatedLineOrderUseCase(
+      catalogRepo(),
+      new SkuQuoteUseCase(quoteSource([])),
+      inventory,
+      placementRepo(),
+      new ReserveDedicatedLineStockUseCase(reservationSource()),
+    );
+
+    await expect(useCase.execute(ctx, { ...input, zoneCode })).rejects.toMatchObject({
+      code: ErrorCode.VALIDATION_ERROR,
+      reasonKey: 'zone_code_invalid',
+    });
+    expect(inventory.findOrderReplay).not.toHaveBeenCalled();
+  });
+
   it('throws PRICE_MISSING when no price rule matches and never charges a default rate', async () => {
     const source = reservationSource();
     const useCase = new CreateDedicatedLineOrderUseCase(

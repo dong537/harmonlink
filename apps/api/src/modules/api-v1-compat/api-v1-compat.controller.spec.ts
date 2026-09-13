@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { prisma } from '@ipeasy/db';
 import type { AuthenticatedContext } from '../../common/auth/auth-context';
+import { AppError } from '../../common/errors/app-error';
+import { ErrorCode } from '../../common/errors/error-codes';
 import { ApiV1CompatController } from './api-v1-compat.controller';
 
 const userContext: AuthenticatedContext = {
@@ -220,6 +222,58 @@ describe('ApiV1CompatController', () => {
       proxyId: 'order-1',
       orderNo: 'order-1',
     });
+  });
+
+  it('passes an empty preview zoneCode through for canonical validation', async () => {
+    const { controller, quote, resolveZone } = createController();
+    quote.execute.mockResolvedValue({
+      skuCode: 'SV',
+      durationDays: 30,
+      unitPrice: '100.00',
+      totalPrice: '100.00',
+      currency: 'CNY',
+    });
+    resolveZone.execute.mockRejectedValue(new AppError(ErrorCode.VALIDATION_ERROR, 'zone_code_invalid', 400));
+
+    await expect(controller.dedicatedPreview(userContext, {
+      skuCode: 'sv',
+      durationDays: 30,
+      country: 'hk',
+      zoneCode: '',
+    })).rejects.toMatchObject({ reasonKey: 'zone_code_invalid' });
+    expect(resolveZone.execute).toHaveBeenCalledWith(
+      { siteId: 'site-1', tenantId: 'tenant-1', userId: 'user-1' },
+      '',
+    );
+  });
+
+  it('passes an empty purchase zoneCode to the canonical order use case', async () => {
+    const { controller, createOrder } = createController();
+    createOrder.execute.mockRejectedValue(new AppError(ErrorCode.VALIDATION_ERROR, 'zone_code_invalid', 400));
+
+    await expect(controller.dedicatedPurchase(userContext, {
+      skuCode: 'zb',
+      durationDays: 60,
+      country: 'hk',
+      zoneCode: '',
+    }, 'request-idempotency-key')).rejects.toMatchObject({ reasonKey: 'zone_code_invalid' });
+    expect(createOrder.execute).toHaveBeenCalledWith(userContext, expect.objectContaining({ zoneCode: '' }));
+  });
+
+  it('passes an empty renewal zoneCode to the canonical renewal use case', async () => {
+    const { controller, renew } = createController();
+    const findLine = vi.spyOn(prisma.dedicated_lines, 'findFirst').mockResolvedValue({ id: 'line-1' } as never);
+    renew.execute.mockRejectedValue(new AppError(ErrorCode.VALIDATION_ERROR, 'zone_code_invalid', 400));
+
+    try {
+      await expect(controller.dedicatedRenew(userContext, '1', {
+        durationDays: 30,
+        zoneCode: '',
+      })).rejects.toMatchObject({ reasonKey: 'zone_code_invalid' });
+      expect(renew.execute).toHaveBeenCalledWith(userContext, 'line-1', expect.objectContaining({ zoneCode: '' }));
+    } finally {
+      findLine.mockRestore();
+    }
   });
 
   it.each([123, {}])('rejects a non-string purchase zoneCode instead of silently dropping %j', async (zoneCode) => {

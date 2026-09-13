@@ -131,10 +131,10 @@ describe('user zones use cases', () => {
       .rejects.toMatchObject({ code: ErrorCode.NOT_FOUND, reasonKey: 'zone_not_found' });
   });
 
-  it('rejects a blank selection instead of treating it as an omitted zone', async () => {
+  it.each(['', '   '])('rejects a blank selection %j instead of treating it as an omitted zone', async (code) => {
     const repo = { findByCode: vi.fn() };
 
-    await expect(new ResolveActiveZoneUseCase(repo as never).execute(scope, '   '))
+    await expect(new ResolveActiveZoneUseCase(repo as never).execute(scope, code))
       .rejects.toMatchObject({ code: ErrorCode.VALIDATION_ERROR, reasonKey: 'zone_code_invalid' });
     expect(repo.findByCode).not.toHaveBeenCalled();
   });

@@ -233,9 +233,9 @@ export class CreateDedicatedLineOrderUseCase {
     siteId: string,
     tenantId: string,
     userId: string,
-    zoneCode: string | undefined,
+    zoneCode: string | null | undefined,
   ) {
-    if (zoneCode === undefined || zoneCode === '') return null;
+    if (zoneCode === undefined || zoneCode === null) return null;
     if (!this.resolveZone) {
       throw new AppError(ErrorCode.INTERNAL_ERROR, 'zone_resolver_not_configured', 500);
     }
@@ -298,7 +298,7 @@ function normalizedOptionalText(value: string | undefined): string | null {
 }
 
 function normalizedOptionalZoneCode(value: string | undefined): string | null {
-  if (value === undefined || value === null || value === '') return null;
+  if (value === undefined || value === null) return null;
   return normalizeZoneCode(value);
 }
 
